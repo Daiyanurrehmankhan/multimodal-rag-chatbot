@@ -1,572 +1,706 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tauqeer Ali Khan Chatbot</title>
     <style>
-        /* Base Styling & Utility Classes (from your original file) */
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f7f7f7;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
+      /* Base Styling & Utility Classes (from your original file) */
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #f7f7f7;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+      }
 
-        .w-full { width: 100%; }
-        .max-w-lg { max-width: 32rem; }
-        .bg-white { background-color: #fff; }
-        .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); }
-        .rounded-xl { border-radius: 0.75rem; }
-        .flex { display: flex; }
-        .flex-col { flex-direction: column; }
-        .h-\[80vh\] { height: 80vh; }
-        .min-h-\[500px\] { min-height: 500px; }
-        .p-4 { padding: 1rem; }
-        .border-b { border-bottom-width: 1px; }
-        .border-t { border-top-width: 1px; }
-        .border-gray-200 { border-color: #e5e7eb; }
-        .bg-gray-50 { background-color: #f9fafb; }
-        .rounded-t-xl { border-top-left-radius: 0.75rem; border-top-right-radius: 0.75rem; }
-        .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
-        .font-bold { font-weight: 700; }
-        .text-gray-800 { color: #1f2937; }
-        .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
-        .text-gray-500 { color: #6b7280; }
-        .flex-grow { flex-grow: 1; }
-        .overflow-y-auto { overflow-y: auto; }
-        .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; margin-bottom: 0; }
-        .items-start { align-items: flex-start; }
-        .items-end { align-items: flex-end; }
-        .p-3 { padding: 0.75rem; }
-        .bg-gray-100 { background-color: #f3f4f6; }
-        .rounded-lg { border-radius: 0.5rem; }
-        .max-w-\[85\%\] { max-width: 85%; }
-        .text-gray-700 { color: #374151; }
-        .text-blue-900 { color: #1e3a8a; }
-        .bg-blue-100 { background-color: #dbeafe; }
-        .rounded-tr-none { border-top-right-radius: 0; }
-        .rounded-tl-none { border-top-left-radius: 0; }
-        .whitespace-pre-wrap { white-space: pre-wrap; }
-        .space-x-3 > :not([hidden]) ~ :not([hidden]) { margin-right: 0; margin-left: 0.75rem; }
-        .border { border-width: 1px; }
-        .border-gray-300 { border-color: #d1d5db; }
-        .focus\:ring-blue-500:focus { --tw-ring-color: #3b82f6; --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color); }
-        .focus\:border-blue-500:focus { border-color: #3b82f6; }
-        .transition { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
-        .duration-150 { transition-duration: 150ms; }
-        .px-5 { padding-left: 1.25rem; padding-right: 1.25rem; }
-        .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
-        .bg-blue-600 { background-color: #2563eb; }
-        .text-white { color: #fff; }
-        .font-semibold { font-weight: 600; }
-        .shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); }
-        .hover\:bg-blue-700:hover { background-color: #1d4ed8; }
-        .active\:bg-blue-800:active { background-color: #1e40af; }
-        .italic { font-style: italic; }
+      .w-full {
+        width: 100%;
+      }
+      .max-w-lg {
+        max-width: 32rem;
+      }
+      .bg-white {
+        background-color: #fff;
+      }
+      .shadow-xl {
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1),
+          0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      }
+      .rounded-xl {
+        border-radius: 0.75rem;
+      }
+      .flex {
+        display: flex;
+      }
+      .flex-col {
+        flex-direction: column;
+      }
+      .h-\[80vh\] {
+        height: 80vh;
+      }
+      .min-h-\[500px\] {
+        min-height: 500px;
+      }
+      .p-4 {
+        padding: 1rem;
+      }
+      .border-b {
+        border-bottom-width: 1px;
+      }
+      .border-t {
+        border-top-width: 1px;
+      }
+      .border-gray-200 {
+        border-color: #e5e7eb;
+      }
+      .bg-gray-50 {
+        background-color: #f9fafb;
+      }
+      .rounded-t-xl {
+        border-top-left-radius: 0.75rem;
+        border-top-right-radius: 0.75rem;
+      }
+      .text-lg {
+        font-size: 1.125rem;
+        line-height: 1.75rem;
+      }
+      .font-bold {
+        font-weight: 700;
+      }
+      .text-gray-800 {
+        color: #1f2937;
+      }
+      .text-sm {
+        font-size: 0.875rem;
+        line-height: 1.25rem;
+      }
+      .text-gray-500 {
+        color: #6b7280;
+      }
+      .flex-grow {
+        flex-grow: 1;
+      }
+      .overflow-y-auto {
+        overflow-y: auto;
+      }
+      .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+        margin-top: 1rem;
+        margin-bottom: 0;
+      }
+      .items-start {
+        align-items: flex-start;
+      }
+      .items-end {
+        align-items: flex-end;
+      }
+      .p-3 {
+        padding: 0.75rem;
+      }
+      .bg-gray-100 {
+        background-color: #f3f4f6;
+      }
+      .rounded-lg {
+        border-radius: 0.5rem;
+      }
+      .max-w-\[85\%\] {
+        max-width: 85%;
+      }
+      .text-gray-700 {
+        color: #374151;
+      }
+      .text-blue-900 {
+        color: #1e3a8a;
+      }
+      .bg-blue-100 {
+        background-color: #dbeafe;
+      }
+      .rounded-tr-none {
+        border-top-right-radius: 0;
+      }
+      .rounded-tl-none {
+        border-top-left-radius: 0;
+      }
+      .whitespace-pre-wrap {
+        white-space: pre-wrap;
+      }
+      .space-x-3 > :not([hidden]) ~ :not([hidden]) {
+        margin-right: 0;
+        margin-left: 0.75rem;
+      }
+      .border {
+        border-width: 1px;
+      }
+      .border-gray-300 {
+        border-color: #d1d5db;
+      }
+      .focus\:ring-blue-500:focus {
+        --tw-ring-color: #3b82f6;
+        --tw-ring-shadow: var(--tw-ring-inset) 0 0 0
+          calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+      }
+      .focus\:border-blue-500:focus {
+        border-color: #3b82f6;
+      }
+      .transition {
+        transition-property: color, background-color, border-color,
+          text-decoration-color, fill, stroke, opacity, box-shadow, transform,
+          filter, backdrop-filter;
+        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+        transition-duration: 150ms;
+      }
+      .duration-150 {
+        transition-duration: 150ms;
+      }
+      .px-5 {
+        padding-left: 1.25rem;
+        padding-right: 1.25rem;
+      }
+      .py-3 {
+        padding-top: 0.75rem;
+        padding-bottom: 0.75rem;
+      }
+      .bg-blue-600 {
+        background-color: #2563eb;
+      }
+      .text-white {
+        color: #fff;
+      }
+      .font-semibold {
+        font-weight: 600;
+      }
+      .shadow-md {
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
+          0 2px 4px -2px rgba(0, 0, 0, 0.1);
+      }
+      .hover\:bg-blue-700:hover {
+        background-color: #1d4ed8;
+      }
+      .active\:bg-blue-800:active {
+        background-color: #1e40af;
+      }
+      .italic {
+        font-style: italic;
+      }
 
-        /* Styles for Markdown formatting */
-        .bot-response h1 { font-size: 1.5rem; font-weight: 700; margin: 0.75rem 0 0.5rem 0; }
-        .bot-response h2 { font-size: 1.25rem; font-weight: 700; margin: 0.75rem 0 0.5rem 0; }
-        .bot-response h3 { font-size: 1.125rem; font-weight: 700; margin: 0.75rem 0 0.5rem 0; }
-        .bot-response strong { font-weight: 700; }
-        .bot-response ul, .bot-response ol { margin: 0.5rem 0; padding-left: 1.5rem; }
-        .bot-response li { margin: 0.25rem 0; }
-        .bot-response p { margin: 0.5rem 0; }
+      /* Styles for Markdown formatting */
+      .bot-response h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 0.75rem 0 0.5rem 0;
+      }
+      .bot-response h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin: 0.75rem 0 0.5rem 0;
+      }
+      .bot-response h3 {
+        font-size: 1.125rem;
+        font-weight: 700;
+        margin: 0.75rem 0 0.5rem 0;
+      }
+      .bot-response strong {
+        font-weight: 700;
+      }
+      .bot-response ul,
+      .bot-response ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+      .bot-response li {
+        margin: 0.25rem 0;
+      }
+      .bot-response p {
+        margin: 0.5rem 0;
+      }
 
-        /* Custom scrollbar style for the chat area */
-        #chat-window::-webkit-scrollbar { width: 8px; }
-        #chat-window::-webkit-scrollbar-thumb {
-            background-color: #d1d5db; /* gray-300 */
-            border-radius: 4px;
-        }
-        
-        /* --- Loading Indicator CSS for .dot-flashing --- */
-        .dot-flashing {
-            position: relative;
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background-color: #3b82f6; /* blue-600 */
-            color: #3b82f6;
-            animation: dotFlashing 1s infinite linear alternate;
-            animation-delay: 0.5s;
-            display: inline-block;
-        }
+      /* Custom scrollbar style for the chat area */
+      #chat-window::-webkit-scrollbar {
+        width: 8px;
+      }
+      #chat-window::-webkit-scrollbar-thumb {
+        background-color: #d1d5db; /* gray-300 */
+        border-radius: 4px;
+      }
 
-        .dot-flashing::before, .dot-flashing::after {
-            content: '';
-            display: inline-block;
-            position: absolute;
-            top: 0;
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background-color: #3b82f6;
-            animation: dotFlashing 1s infinite linear alternate;
-        }
+      /* --- Loading Indicator CSS for .dot-flashing --- */
+      .dot-flashing {
+        position: relative;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background-color: #3b82f6; /* blue-600 */
+        color: #3b82f6;
+        animation: dotFlashing 1s infinite linear alternate;
+        animation-delay: 0.5s;
+        display: inline-block;
+      }
 
-        .dot-flashing::before {
-            left: -12px;
-            animation-delay: 0s;
-        }
+      .dot-flashing::before,
+      .dot-flashing::after {
+        content: "";
+        display: inline-block;
+        position: absolute;
+        top: 0;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background-color: #3b82f6;
+        animation: dotFlashing 1s infinite linear alternate;
+      }
 
-        .dot-flashing::after {
-            left: 12px;
-            animation-delay: 1s;
-        }
+      .dot-flashing::before {
+        left: -12px;
+        animation-delay: 0s;
+      }
 
-        @keyframes dotFlashing {
-            0% {
-                background-color: #3b82f6;
-            }
-            50%, 100% {
-                background-color: #bfdbfe; /* blue-200 */
-            }
-        }
+      .dot-flashing::after {
+        left: 12px;
+        animation-delay: 1s;
+      }
 
-        /* --- Microphone Button Styling --- */
-        .mic-button {
-            background-color: #dc2626; /* red-600 */
-            color: #fff;
-            padding: 0.75rem 1.25rem;
-            border-radius: 0.5rem;
-            font-size: 1.25rem; /* Larger icon */
-            line-height: 1;
-            transition: background-color 150ms;
-            flex-shrink: 0; /* Prevents it from shrinking */
+      @keyframes dotFlashing {
+        0% {
+          background-color: #3b82f6;
         }
-        .mic-button:hover {
-            background-color: #b91c1c; /* red-700 */
+        50%,
+        100% {
+          background-color: #bfdbfe; /* blue-200 */
         }
-        .mic-button.listening {
-            background-color: #ef4444; /* red-500, a lighter shade to indicate active state */
-            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.5); /* Glowing effect */
-        }
+      }
 
-        /* --- NEW: Mute Button Styling --- */
-        .mute-button {
-            background-color: #d1d5db; /* gray-300 */
-            color: #1f2937; /* gray-800 */
-            border: none;
-            padding: 0.5rem;
-            border-radius: 0.5rem;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background-color 150ms;
-            margin-left: 0.75rem;
-        }
-        .mute-button:hover {
-            background-color: #9ca3af; /* gray-400 */
-        }
-
-        /* Adjust header layout to accommodate the button */
-        .header-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .header-title-group {
-            display: flex;
-            flex-direction: column;
-        }
+      /* Adjust header layout to accommodate the button */
+      .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .header-title-group {
+        display: flex;
+        flex-direction: column;
+      }
     </style>
-</head>
-<body class="p-4">
-
-    <div class="w-full max-w-lg bg-white shadow-xl rounded-xl flex flex-col h-[80vh] min-h-[500px]">
-
-        <header class="p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
-            <div class="header-content">
-                <div class="header-title-group">
-                    <h1 class="text-lg font-bold text-gray-800">Chatbot Assistant</h1>
-                    <p class="text-sm text-gray-500">Book: Islam The Religion</p>
-                </div>
-                <button
-                    id="mute-button"
-                    class="mute-button"
-                    title="Toggle Text-to-Speech"
-                >
-                    🔊
-                </button>
-            </div>
-            </header>
-
-        <div id="chat-window" class="flex-grow p-4 overflow-y-auto space-y-4">
-            <div class="flex flex-col items-start">
-                <p class="font-bold text-gray-800">Bot:</p>
-                <div class="p-3 bg-gray-100 rounded-lg max-w-[85%] text-gray-700">
-                    Hello! I am a chatbot assistant providing information about the Book "Islam The Religion". How can I assist you?
-                </div>
-            </div>
-            </div>
-
-        <div class="p-4 border-t border-gray-200 flex space-x-3">
-            <input
-                type="text"
-                id="user-input"
-                placeholder="Type a message or press the mic button..."
-                class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                autocomplete="off"
-            >
-            <button
-                id="mic-button"
-                class="mic-button shadow-md transition duration-150"
-                title="Voice Input"
-            >
-                🎙️
-            </button>
-            <button
-                id="send-button"
-                class="px-5 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-150 active:bg-blue-800"
-            >
-                Send
-            </button>
+  </head>
+  <body class="p-4">
+    <div
+      class="w-full max-w-lg bg-white shadow-xl rounded-xl flex flex-col h-[80vh] min-h-[500px]"
+    >
+      <header class="p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+        <div class="header-content">
+          <div class="header-title-group">
+            <h1 class="text-lg font-bold text-gray-800">Chatbot Assistant</h1>
+            <p class="text-sm text-gray-500">Ask questions about your documents</p>
+          </div>
+          <input type="file" id="doc-file-input" accept=".pdf,.txt,.md" style="display: none" />
+          <button type="button" id="add-doc-btn" class="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700" title="Add document to a course">+</button>
         </div>
+      </header>
+      <!-- Modal: select course for uploaded document -->
+      <div id="course-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" style="display: none;">
+        <div class="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+          <h3 class="text-lg font-bold text-gray-800 mb-2">Assign document to course</h3>
+          <p id="course-modal-filename" class="text-sm text-gray-600 mb-4"></p>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Course</label>
+          <select id="course-select" class="w-full p-2 border border-gray-300 rounded-lg mb-4">
+            <option value="">Loading...</option>
+          </select>
+          <div class="flex gap-2 justify-end">
+            <button type="button" id="course-modal-cancel" class="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100">Cancel</button>
+            <button type="button" id="course-modal-confirm" class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Add document</button>
+          </div>
+          <p id="course-modal-status" class="mt-3 text-sm hidden"></p>
+        </div>
+      </div>
+
+      <div id="chat-window" class="flex-grow p-4 overflow-y-auto space-y-4">
+        <div class="flex flex-col items-start">
+          <p class="font-bold text-gray-800">Bot:</p>
+          <div class="p-3 bg-gray-100 rounded-lg max-w-[85%] text-gray-700">
+            Hello! I am a chatbot assistant that can answer questions based on the documents you provide. How can I assist you?
+          </div>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-gray-200 space-y-2">
+        <div class="flex items-center gap-2 text-sm text-gray-600">
+          <label for="student-id-input">Course (for course-scoped answers):</label>
+          <select
+            id="student-id-input"
+            class="w-56 p-2 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">Select course</option>
+            <option value="Life Insurance">Life Insurance</option>
+            <option value="Islamic Banking">Islamic Banking</option>
+          </select>
+        </div>
+        <div class="flex space-x-3">
+        <input
+          type="text"
+          id="user-input"
+          placeholder="Type a message..."
+          class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150"
+          autocomplete="off"
+        />
+        <button
+          id="send-button"
+          class="px-5 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-150 active:bg-blue-800"
+        >
+          Send
+        </button>
+        <button
+          id="download-button"
+          class="px-5 py-3 bg-gray-200 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-300 transition duration-150"
+          style="display: none"
+        >
+          Download as PDF
+        </button>
+        </div>
+      </div>
     </div>
 
     <script>
-        // Define the Flask server endpoint
-        const API_ENDPOINT = 'http://127.0.0.1:8000/chat';
-        
-        // Corrected session ID generation for robustness
-        const sessionID = sessionStorage.getItem('chat_session_id') || crypto.randomUUID();
-        sessionStorage.setItem('chat_session_id', sessionID);
-    
-        // --- GLOBAL STATE VARIABLE ---
-        let isMuted = false;
-        // ---------------------------------
-        
-        // REMOVED: isUrdu function (no longer needed)
-    
-        const parseMarkdownToHTML = (text) => {
-            let html = text;
-            
-            // Convert ### Heading 3 to <h3>
-            html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
-            
-            // Convert ## Heading 2 to <h2>
-            html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
-            
-            // Convert # Heading 1 to <h1>
-            html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
-            
-            // Convert **bold** to <strong>
-            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            
-            // Convert *italic* to <em>
-            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-            
-            // Convert bullet points (* item) to <ul><li>
-            const lines = html.split('\n');
-            let inList = false;
-            let listType = '';
-            let result = [];
-            
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                const isBulletPoint = /^\s*\*\s+/.test(line);
-                const isNumberedPoint = /^\s*\d+\.\s+/.test(line);
-                
-                if (isBulletPoint || isNumberedPoint) {
-                    if (!inList) {
-                        listType = isBulletPoint ? 'ul' : 'ol';
-                        result.push(`<${listType}>`);
-                        inList = true;
-                    }
-                    
-                    // Extract the list item text
-                    const itemText = line.replace(/^\s*[\*\d+\.]\s+/, '').trim();
-                    result.push(`<li>${itemText}</li>`);
-                } else {
-                    if (inList) {
-                        result.push(`</${listType}>`);
-                        inList = false;
-                        listType = '';
-                    }
-                    
-                    // Handle paragraphs (ignoring empty lines resulting from markdown replacements)
-                    if (line.trim() && !line.startsWith('<h')) { 
-                        result.push(`<p>${line}</p>`);
-                    }
-                }
-            }
-            
-            if (inList) {
-                result.push(`</${listType}>`);
-            }
-            
-            return result.join('\n');
-        };
-    
-        document.addEventListener('DOMContentLoaded', () => {
-            const chatWindow = document.getElementById('chat-window');
-            const userInput = document.getElementById('user-input');
-            const sendButton = document.getElementById('send-button');
-            const micButton = document.getElementById('mic-button');
-            const muteButton = document.getElementById('mute-button'); 
-    
-            // --- Utility Functions ---
-    
-            const createMessageElement = (sender) => {
-                const messageContainer = document.createElement('div');
-                messageContainer.classList.add('flex', 'flex-col', 'items-start');
-                
-                const senderLabel = document.createElement('p');
-                senderLabel.classList.add('font-bold', 'text-gray-800');
-                senderLabel.textContent = sender === 'user' ? 'You:' : 'Bot:';
-                
-                const messageBubble = document.createElement('div');
-                messageBubble.classList.add('p-3', 'rounded-lg', 'max-w-[85%]');
-                
-                if (sender === 'user') {
-                    messageContainer.classList.add('items-end');
-                    messageBubble.classList.add('bg-blue-100', 'text-blue-900', 'rounded-tr-none', 'whitespace-pre-wrap');
-                } else {
-                    messageBubble.classList.add('bg-gray-100', 'text-gray-700', 'rounded-tl-none', 'bot-response');
-                    messageBubble.id = 'bot-response-stream';
-                }
-                
-                messageContainer.appendChild(senderLabel);
-                messageContainer.appendChild(messageBubble);
-                chatWindow.appendChild(messageContainer);
-    
-                // Scroll to the latest message
-                chatWindow.scrollTop = chatWindow.scrollHeight;
-                return messageBubble;
-            };
-    
-            const appendText = (element, text) => {
-                // Store accumulated text in a data attribute
-                if (!element.dataset.accumulated) {
-                    element.dataset.accumulated = '';
-                }
-                element.dataset.accumulated += text;
-                
-                // Parse and render the accumulated text as HTML
-                const htmlContent = parseMarkdownToHTML(element.dataset.accumulated);
-                element.innerHTML = htmlContent;
-                
-                chatWindow.scrollTop = chatWindow.scrollHeight;
-            };
-    
-            // --- Text-to-Speech Function (SIMPLIFIED TO ENGLISH ONLY) ---
-            const speakText = (text) => {
-                if (!('speechSynthesis' in window)) {
-                    console.warn("Text-to-Speech not supported in this browser.");
-                    return;
-                }
-    
-                // Check MUTE STATE
-                if (isMuted) {
-                    return; 
-                }
-                
-                // Stop any ongoing speech
-                window.speechSynthesis.cancel(); 
-                
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.rate = 1.0; 
-                
-                // Explicitly set language to English and try to find an English voice
-                utterance.lang = 'en-US'; 
-                const voices = window.speechSynthesis.getVoices();
-                const preferredVoice = voices.find(v => v.lang.startsWith('en'));
-    
-                if (preferredVoice) {
-                    utterance.voice = preferredVoice;
-                    console.log(`TTS: Using English voice: ${preferredVoice.name}`);
-                } else {
-                    console.warn(`TTS: Could not find a specific English voice. Using browser default.`);
-                }
-    
-                window.speechSynthesis.speak(utterance);
-            };
-            // --- END SIMPLIFIED TTS FUNCTION ---
-                
-            // --- New Streaming Function ---
-    
-            const streamBotResponse = async (query) => {
-                let botMessageElement = createMessageElement('bot');
-                botMessageElement.innerHTML = '<span class="dot-flashing"></span>';
-    
-                let finalResponseText = ''; 
-    
-                try {
-                    const response = await fetch(API_ENDPOINT, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            query: query,
-                            session_id: sessionID
-                        })
-                    });
-    
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-    
-                    const reader = response.body.getReader();
-                    const decoder = new TextDecoder();
-                    let done = false;
-                    
-                    botMessageElement.innerHTML = '';
-                    botMessageElement.dataset.accumulated = ''; 
-    
-                    while (!done) {
-                        const { value, done: readerDone } = await reader.read();
-                        done = readerDone;
-                        const chunk = decoder.decode(value);
-                        
-                        appendText(botMessageElement, chunk);
-                        finalResponseText += chunk;
-                    }
-                    
-                    // --- TTS Activation (Uses updated speakText) ---
-                    if (finalResponseText.trim()) {
-                        speakText(finalResponseText.trim());
-                    }
-    
-                } catch (error) {
-                    // Stop speech if an error occurs
-                    window.speechSynthesis.cancel(); 
-                    botMessageElement.innerHTML = `<p>Error: Could not connect to the backend server. Is the Flask app running at ${API_ENDPOINT}?</p>`;
-                    botMessageElement.style.backgroundColor = '#fecaca'; 
-                    console.error('Streaming error:', error);
-                }
-            };
-    
-            // --- Event Handler ---
-    
-            const handleSend = async () => {
-                const query = userInput.value.trim();
-                if (query === '') return;
-    
-                // 1. Display User Message
-                createMessageElement('user'); 
-                const lastUserBubble = chatWindow.lastElementChild.querySelector('div:last-child');
-                lastUserBubble.textContent = query;
-                userInput.value = '';
-                
-                sendButton.disabled = true;
-                micButton.disabled = true; 
-    
-                // 2. Stop any ongoing speech
-                window.speechSynthesis.cancel();
-    
-                // 3. Call the actual streaming endpoint
-                await streamBotResponse(query);
-    
-                // 4. Cleanup
-                const finalBotResponse = chatWindow.querySelector('#bot-response-stream');
-                if (finalBotResponse) {
-                    finalBotResponse.removeAttribute('id'); 
-                }
-                
-                sendButton.disabled = false;
-                micButton.disabled = false; 
-                userInput.focus();
-            };
-            
-            sendButton.addEventListener('click', handleSend);
-    
-            userInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    handleSend();
-                }
-            });
-            
-            // --- Mute Button Logic (Updated to use cancel) ---
-            muteButton.addEventListener('click', () => {
-                isMuted = !isMuted; // Toggle the state
-                
-                if (isMuted) {
-                    muteButton.textContent = '🔇'; // Muted icon
-                    muteButton.title = 'Text-to-Speech is Muted (Click to Unmute)';
-                    window.speechSynthesis.cancel(); // Stop audio immediately
-                } else {
-                    muteButton.textContent = '🔊'; // Unmuted icon
-                    muteButton.title = 'Text-to-Speech is Unmuted (Click to Mute)';
-                }
-            });
-            // --- END Mute Button Logic ---
-    
-            // --- Speech Recognition Logic (Unchanged but included for completeness) ---
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = SpeechRecognition ? new SpeechRecognition() : null;
-            let isListening = false;
-            let userSpoke = false;
-    
-            if (recognition) {
-                recognition.continuous = false;
-                recognition.lang = 'en-US';
-    
-                recognition.onstart = () => {
-                    isListening = true;
-                    micButton.classList.add('listening');
-                    micButton.textContent = '🛑';
-                    userInput.placeholder = "Listening... Speak now.";
-                    userInput.disabled = true;
-                    sendButton.disabled = true;
-                };
-    
-                recognition.onresult = (event) => {
-                    const transcript = Array.from(event.results)
-                        .map(result => result[0])
-                        .map(result => result.transcript)
-                        .join('');
-                    
-                    userInput.value = transcript;
-                    userSpoke = true;
-                };
-    
-                recognition.onerror = (event) => {
-                    console.error('Speech recognition error:', event.error);
-                    if (event.error === 'no-speech') {
-                        userInput.placeholder = "Didn't catch that. Tap to try again.";
-                    } else if (event.error !== 'aborted') {
-                            userInput.value = `Error: ${event.error}`;
-                    }
-                };
-    
-                recognition.onend = () => {
-                    isListening = false;
-                    micButton.classList.remove('listening');
-                    micButton.textContent = '🎙️';
-                    userInput.placeholder = "Type a message or press the mic button...";
-                    userInput.disabled = false;
-                    sendButton.disabled = false;
-                    
-                    if (userSpoke && userInput.value.trim() !== '') {
-                        handleSend();
-                    }
-                    userSpoke = false;
-                };
-    
-                micButton.addEventListener('click', () => {
-                    window.speechSynthesis.cancel(); // Stop speech immediately
-                    
-                    if (isListening) {
-                        recognition.stop();
-                    } else {
-                        userInput.value = ''; 
-                        recognition.start();
-                    }
-                });
-            } else {
-                micButton.disabled = true;
-                micButton.title = 'Speech Recognition not supported in this browser.';
-                micButton.textContent = '❌';
-                console.error("Web Speech API (Speech Recognition) not supported in this browser.");
-            }
-            
-            userInput.focus();
-        });
-    </script>
+      // Define the Flask server endpoints
+      const API_ENDPOINT = "http://127.0.0.1:8000/chat";
+      const DOWNLOAD_ENDPOINT = "http://127.0.0.1:8000/download_pdf";
+      const COURSES_ENDPOINT = "http://127.0.0.1:8000/courses";
+      const UPLOAD_ENDPOINT = "http://127.0.0.1:8000/upload_document";
 
-</body>
+      // New session on every page load — no memory from previous sessions
+      const sessionID = crypto.randomUUID();
+
+      // ---------------------------------
+
+      // REMOVED: isUrdu function (no longer needed)
+
+      const parseMarkdownToHTML = (text) => {
+        let html = text;
+
+        // Convert ### Heading 3 to <h3>
+        html = html.replace(/^### (.*?)$/gm, "<h3>$1</h3>");
+
+        // Convert ## Heading 2 to <h2>
+        html = html.replace(/^## (.*?)$/gm, "<h2>$1</h2>");
+
+        // Convert # Heading 1 to <h1>
+        html = html.replace(/^# (.*?)$/gm, "<h1>$1</h1>");
+
+        // Convert **bold** to <strong>
+        html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+        // Convert *italic* to <em>
+        html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
+
+        // Convert bullet points (* item) to <ul><li>
+        const lines = html.split("\n");
+        let inList = false;
+        let listType = "";
+        let result = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const isBulletPoint = /^\s*\*\s+/.test(line);
+          const isNumberedPoint = /^\s*\d+\.\s+/.test(line);
+
+          if (isBulletPoint || isNumberedPoint) {
+            if (!inList) {
+              listType = isBulletPoint ? "ul" : "ol";
+              result.push(`<${listType}>`);
+              inList = true;
+            }
+
+            // Extract the list item text
+            const itemText = line.replace(/^\s*[\*\d+\.]\s+/, "").trim();
+            result.push(`<li>${itemText}</li>`);
+          } else {
+            if (inList) {
+              result.push(`</${listType}>`);
+              inList = false;
+              listType = "";
+            }
+
+            // Handle paragraphs (ignoring empty lines resulting from markdown replacements)
+            if (line.trim() && !line.startsWith("<h")) {
+              result.push(`<p>${line}</p>`);
+            }
+          }
+        }
+
+        if (inList) {
+          result.push(`</${listType}>`);
+        }
+
+        return result.join("\n");
+      };
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const chatWindow = document.getElementById("chat-window");
+        const userInput = document.getElementById("user-input");
+        const sendButton = document.getElementById("send-button");
+        const downloadButton = document.getElementById("download-button");
+        const studentIdInput = document.getElementById("student-id-input");
+        const addDocBtn = document.getElementById("add-doc-btn");
+        const docFileInput = document.getElementById("doc-file-input");
+        const courseModal = document.getElementById("course-modal");
+        const courseModalFilename = document.getElementById("course-modal-filename");
+        const courseSelect = document.getElementById("course-select");
+        const courseModalCancel = document.getElementById("course-modal-cancel");
+        const courseModalConfirm = document.getElementById("course-modal-confirm");
+        const courseModalStatus = document.getElementById("course-modal-status");
+
+        let pendingFile = null;
+        let canDownload = false;
+        // Ensure the button is hidden initially
+        downloadButton.style.display = "none";
+
+        // --- Add document: file picker -> course selector -> upload ---
+        addDocBtn.addEventListener("click", () => docFileInput.click());
+
+        docFileInput.addEventListener("change", async (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+          pendingFile = file;
+          courseModalFilename.textContent = file.name;
+          courseSelect.innerHTML = "<option value=\"\">Loading...</option>";
+          courseModal.style.display = "flex";
+          try {
+            const res = await fetch(COURSES_ENDPOINT);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Failed to load courses");
+            const courses = data.courses || [];
+            courseSelect.innerHTML = courses.length
+              ? "<option value=\"\">Select a course</option>" + courses.map((c) => `<option value="${c.id}">${c.name || c.code} (${c.code})</option>`).join("")
+              : "<option value=\"\">No courses found</option>";
+          } catch (err) {
+            courseSelect.innerHTML = "<option value=\"\">Error loading courses</option>";
+            console.error(err);
+          }
+        });
+
+        courseModalCancel.addEventListener("click", () => {
+          courseModal.style.display = "none";
+          pendingFile = null;
+          docFileInput.value = "";
+        });
+
+        courseModalConfirm.addEventListener("click", async () => {
+          const courseId = courseSelect.value;
+          if (!courseId || !pendingFile) return;
+          courseModalStatus.classList.remove("hidden");
+          courseModalStatus.textContent = "Uploading and indexing...";
+          courseModalStatus.style.color = "";
+          try {
+            const formData = new FormData();
+            formData.append("file", pendingFile);
+            formData.append("course_id", courseId);
+            const res = await fetch(UPLOAD_ENDPOINT, { method: "POST", body: formData });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+              courseModalStatus.textContent = data.message || "Document added.";
+              courseModalStatus.style.color = "green";
+              setTimeout(() => {
+                courseModal.style.display = "none";
+                pendingFile = null;
+                docFileInput.value = "";
+                courseModalStatus.classList.add("hidden");
+              }, 1500);
+            } else {
+              courseModalStatus.textContent = data.error || "Upload failed.";
+              courseModalStatus.style.color = "red";
+            }
+          } catch (err) {
+            courseModalStatus.textContent = "Network error.";
+            courseModalStatus.style.color = "red";
+          }
+        });
+
+        // --- Utility Functions ---
+
+        const createMessageElement = (sender) => {
+          const messageContainer = document.createElement("div");
+          messageContainer.classList.add("flex", "flex-col", "items-start");
+
+          const senderLabel = document.createElement("p");
+          senderLabel.classList.add("font-bold", "text-gray-800");
+          senderLabel.textContent = sender === "user" ? "You:" : "Bot:";
+
+          const messageBubble = document.createElement("div");
+          messageBubble.classList.add("p-3", "rounded-lg", "max-w-[85%]");
+
+          if (sender === "user") {
+            messageContainer.classList.add("items-end");
+            messageBubble.classList.add(
+              "bg-blue-100",
+              "text-blue-900",
+              "rounded-tr-none",
+              "whitespace-pre-wrap"
+            );
+          } else {
+            messageBubble.classList.add(
+              "bg-gray-100",
+              "text-gray-700",
+              "rounded-tl-none",
+              "bot-response"
+            );
+            messageBubble.id = "bot-response-stream";
+          }
+
+          messageContainer.appendChild(senderLabel);
+          messageContainer.appendChild(messageBubble);
+          chatWindow.appendChild(messageContainer);
+
+          // Scroll to the latest message
+          chatWindow.scrollTop = chatWindow.scrollHeight;
+          return messageBubble;
+        };
+
+        const appendText = (element, text) => {
+          // Store accumulated text in a data attribute
+          if (!element.dataset.accumulated) {
+            element.dataset.accumulated = "";
+          }
+          element.dataset.accumulated += text;
+
+          // Parse and render the accumulated text as HTML
+          const htmlContent = parseMarkdownToHTML(element.dataset.accumulated);
+          element.innerHTML = htmlContent;
+
+          chatWindow.scrollTop = chatWindow.scrollHeight;
+        };
+
+
+        // --- New Streaming Function ---
+
+        const streamBotResponse = async (query) => {
+          let botMessageElement = createMessageElement("bot");
+          botMessageElement.innerHTML = '<span class="dot-flashing"></span>';
+
+          let finalResponseText = "";
+
+          try {
+            const response = await fetch(API_ENDPOINT, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                query: query,
+                session_id: sessionID,
+                selected_course: studentIdInput.value.trim() || null,
+                user_id: studentIdInput.value.trim() || null,
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let done = false;
+
+            botMessageElement.innerHTML = "";
+            botMessageElement.dataset.accumulated = "";
+
+            while (!done) {
+              const { value, done: readerDone } = await reader.read();
+              done = readerDone;
+              const chunk = decoder.decode(value);
+
+              appendText(botMessageElement, chunk);
+              finalResponseText += chunk;
+            }
+
+
+          } catch (error) {
+              botMessageElement.innerHTML = `<p>Error: Could not connect to the backend server. Is the Flask app running at ${API_ENDPOINT}?</p>`;
+            botMessageElement.style.backgroundColor = "#fecaca";
+            console.error("Streaming error:", error);
+          }
+        };
+
+        // --- Event Handler ---
+
+        const handleSend = async () => {
+          const query = userInput.value.trim();
+          if (query === "") return;
+
+          // 1. Display User Message
+          createMessageElement("user");
+          const lastUserBubble =
+            chatWindow.lastElementChild.querySelector("div:last-child");
+          lastUserBubble.textContent = query;
+          userInput.value = "";
+
+          sendButton.disabled = true;
+
+          // 3. Detect if the user explicitly asked for a document
+          const lower = query.toLowerCase();
+          const wantsDocument =
+            lower.includes("document") ||
+            lower.includes("pdf") ||
+            lower.includes("report");
+
+          // 4. Call the actual streaming endpoint
+          await streamBotResponse(query);
+
+          // 5. Cleanup and update download availability
+          const finalBotResponse = chatWindow.querySelector(
+            "#bot-response-stream"
+          );
+          if (finalBotResponse) {
+            finalBotResponse.removeAttribute("id");
+          }
+
+          canDownload = wantsDocument;
+          downloadButton.style.display = canDownload ? "inline-block" : "none";
+
+          sendButton.disabled = false;
+          userInput.focus();
+        };
+
+        const handleDownload = async () => {
+          if (!canDownload) {
+            return;
+          }
+
+          try {
+            const url = `${DOWNLOAD_ENDPOINT}?session_id=${encodeURIComponent(
+              sessionID
+            )}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+              alert("No downloadable document available yet. Ask a question first.");
+              return;
+            }
+            const blob = await response.blob();
+            const downloadUrl = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = downloadUrl;
+            a.download = "response.pdf";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(downloadUrl);
+          } catch (error) {
+            console.error("Download error:", error);
+            alert("Failed to download the PDF.");
+          }
+        };
+
+        sendButton.addEventListener("click", handleSend);
+        downloadButton.addEventListener("click", handleDownload);
+
+        userInput.addEventListener("keypress", (e) => {
+          if (e.key === "Enter") {
+            handleSend();
+          }
+        });
+
+
+
+        userInput.focus();
+      });
+    </script>
+  </body>
 </html>
