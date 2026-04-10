@@ -39,3 +39,4 @@ secrets.json
 # Commonly used for temporary data or local testing files
 # Adjust this rule based on your project's specific data directory structure.
 data/
+uploads/

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tauqeer Ali Khan Chatbot</title>
     <style>
-      /* Base Styling & Utility Classes (from your original file) */
+      /* Utility-style classes used by this single-page chat UI. */
       body {
         font-family: "Inter", sans-serif;
         background-color: #f7f7f7;
@@ -369,9 +369,7 @@
       // New session on every page load — no memory from previous sessions
       const sessionID = crypto.randomUUID();
 
-      // ---------------------------------
-
-      // REMOVED: isUrdu function (no longer needed)
+      // Render a small markdown subset returned by the backend.
 
       const parseMarkdownToHTML = (text) => {
         let html = text;
@@ -438,7 +436,7 @@
         const userInput = document.getElementById("user-input");
         const sendButton = document.getElementById("send-button");
         const downloadButton = document.getElementById("download-button");
-        const studentIdInput = document.getElementById("student-id-input");
+        const courseFilterInput = document.getElementById("student-id-input");
         const addDocBtn = document.getElementById("add-doc-btn");
         const docFileInput = document.getElementById("doc-file-input");
         const courseModal = document.getElementById("course-modal");
@@ -450,10 +448,10 @@
 
         let pendingFile = null;
         let canDownload = false;
-        // Ensure the button is hidden initially
+        // Hide download until a response type that implies a document is requested.
         downloadButton.style.display = "none";
 
-        // --- Add document: file picker -> course selector -> upload ---
+        // Upload flow: pick file -> choose course -> upload/index.
         addDocBtn.addEventListener("click", () => docFileInput.click());
 
         docFileInput.addEventListener("change", async (e) => {
@@ -514,7 +512,7 @@
           }
         });
 
-        // --- Utility Functions ---
+        // Create a styled chat bubble and return the message element.
 
         const createMessageElement = (sender) => {
           const messageContainer = document.createElement("div");
@@ -555,22 +553,19 @@
         };
 
         const appendText = (element, text) => {
-          // Store accumulated text in a data attribute
+          // Keep accumulated raw text, then re-render markdown each chunk.
           if (!element.dataset.accumulated) {
             element.dataset.accumulated = "";
           }
           element.dataset.accumulated += text;
 
-          // Parse and render the accumulated text as HTML
           const htmlContent = parseMarkdownToHTML(element.dataset.accumulated);
           element.innerHTML = htmlContent;
 
           chatWindow.scrollTop = chatWindow.scrollHeight;
         };
 
-
-        // --- New Streaming Function ---
-
+  // Stream server chunks and progressively update the bot bubble.
         const streamBotResponse = async (query) => {
           let botMessageElement = createMessageElement("bot");
           botMessageElement.innerHTML = '<span class="dot-flashing"></span>';
@@ -586,8 +581,8 @@
               body: JSON.stringify({
                 query: query,
                 session_id: sessionID,
-                selected_course: studentIdInput.value.trim() || null,
-                user_id: studentIdInput.value.trim() || null,
+                selected_course: courseFilterInput.value.trim() || null,
+                user_id: courseFilterInput.value.trim() || null,
               }),
             });
 
@@ -611,21 +606,19 @@
               finalResponseText += chunk;
             }
 
-
           } catch (error) {
-              botMessageElement.innerHTML = `<p>Error: Could not connect to the backend server. Is the Flask app running at ${API_ENDPOINT}?</p>`;
+            botMessageElement.innerHTML = `<p>Error: Could not connect to the backend server. Is the Flask app running at ${API_ENDPOINT}?</p>`;
             botMessageElement.style.backgroundColor = "#fecaca";
             console.error("Streaming error:", error);
           }
         };
 
-        // --- Event Handler ---
-
+        // Handle one user send cycle: show message, stream answer, toggle download button.
         const handleSend = async () => {
           const query = userInput.value.trim();
           if (query === "") return;
 
-          // 1. Display User Message
+          // Display user message immediately for responsive UX.
           createMessageElement("user");
           const lastUserBubble =
             chatWindow.lastElementChild.querySelector("div:last-child");
@@ -634,17 +627,17 @@
 
           sendButton.disabled = true;
 
-          // 3. Detect if the user explicitly asked for a document
+          // Decide whether to expose PDF download based on prompt intent.
           const lower = query.toLowerCase();
           const wantsDocument =
             lower.includes("document") ||
             lower.includes("pdf") ||
             lower.includes("report");
 
-          // 4. Call the actual streaming endpoint
+          // Stream response from backend.
           await streamBotResponse(query);
 
-          // 5. Cleanup and update download availability
+          // Cleanup stream marker and update download button state.
           const finalBotResponse = chatWindow.querySelector(
             "#bot-response-stream"
           );

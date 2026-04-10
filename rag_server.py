@@ -1,3 +1,5 @@
+"""Flask API surface for auth, document ingestion, chat streaming, and PDF export."""
+
 import os
 import uuid
 import logging
@@ -5,7 +7,7 @@ from flask import Flask, request, Response, render_template, send_file
 from flask_cors import CORS
 from app import chat
 from rag_working import (
-    delete_document, list_document_names, get_courses, index_single_document, 
+    delete_document, list_document_names, list_documents_metadata, get_courses, index_single_document, 
     update_document_status, init_db_tables, verify_user, create_user, 
     get_user_by_id, get_all_users, add_user_to_course, get_user_courses
 )
@@ -15,6 +17,16 @@ import re
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
 from reportlab.lib.styles import getSampleStyleSheet
+
+ALLOWED_COURSES = {
+    "ai/ml": "AI/ML",
+    "web development": "Web development",
+    "cloud computing": "Cloud Computing",
+    "data science": "Data science",
+    "datascience": "Data science",
+}
+
+STAFF_ROLES = {"instructor", "admin"}
 
 app = Flask(__name__)
 logging.basicConfig(
@@ -168,6 +180,7 @@ def upload_document_route():
     """
     Upload one document and index it under the selected course.
     Form data: file (file), and either course_id (int) or course_name (string).
+    Optional: short_description (or description) and generated_course_id for metadata table.
     """
     if "file" not in request.files:
         return {"error": "No file part"}, 400
@@ -176,6 +189,17 @@ def upload_document_route():
         return {"error": "No file selected"}, 400
     course_id_raw = request.form.get("course_id")
     course_name = str(request.form.get("course_name") or "").strip()
+    generated_course_id_raw = request.form.get("generated_course_id") or request.form.get("course_generated_id")
+    short_description = str(
+        request.form.get("short_description") or request.form.get("description") or ""
+    ).strip()
+
+    generated_course_id = None
+    if generated_course_id_raw is not None and str(generated_course_id_raw).strip() != "":
+        try:
+            generated_course_id = int(generated_course_id_raw)
+        except (ValueError, TypeError):
+            return {"error": "generated_course_id must be an integer"}, 400
 
     selected_course = None
     if course_name:
@@ -207,13 +231,49 @@ def upload_document_route():
         return {"error": f"Failed to save file: {e}"}, 500
 
     initial_status = "approved" if uploader_role in ("admin", "instructor") else "pending"
-    success, message, document_id = index_single_document(save_path, selected_course, initial_status=initial_status)
+    success, message, document_id = index_single_document(
+        save_path,
+        selected_course,
+        initial_status=initial_status,
+        original_filename=safe_name,
+        short_description=short_description,
+        generated_course_id=generated_course_id,
+    )
     if not success:
         return {"error": message, "document_id": document_id}, 400
     return {"status": "indexed", "message": message, "document_id": document_id}
 
 chat_histories = {}
 last_responses = {}
+
+
+def _normalize_selected_course(selected_course, user_role=None):
+    """Normalize user-provided course names to a supported canonical label."""
+    if isinstance(selected_course, (list, tuple, set, dict)):
+        return False
+
+    selected_value = str(selected_course).strip() if selected_course is not None else ""
+    if not selected_value:
+        return None
+
+    normalized_role = str(user_role or "").strip().lower()
+    if normalized_role in STAFF_ROLES:
+        return selected_value
+
+    return ALLOWED_COURSES.get(selected_value.lower())
+
+
+def _update_document_status_from_payload(status: str):
+    """Shared handler for status-only document actions."""
+    data = request.get_json(silent=True) or {}
+    updated_count = update_document_status(
+        status=status,
+        file_name=data.get("file_name"),
+        source=data.get("source"),
+    )
+    if updated_count == 0:
+        return {"status": "not_found_or_error", "updated_count": 0}, 404
+    return {"status": "updated", "updated_count": updated_count}
 
 
 def markdown_to_story(text: str):
@@ -231,6 +291,7 @@ def markdown_to_story(text: str):
     bullet_items = []
 
     def flush_bullets():
+        # Keep contiguous markdown bullets grouped in one list block.
         nonlocal bullet_items
         if bullet_items:
             list_items = [
@@ -311,24 +372,21 @@ def chat_route():
     if not query:
         return {"error": "query is required"}, 400
 
-    if selected_course is None or not str(selected_course).strip():
-        return {"error": "selected_course is required. Choose a course before chatting."}, 400
+    normalized_course = _normalize_selected_course(selected_course, user_role)
 
-    # Enforce a single selected course per request.
-    if isinstance(selected_course, (list, tuple, set, dict)):
+    if normalized_course is False:
         return {"error": "selected_course must be a single course value, not a list."}, 400
 
-    allowed_courses = {
-        "ai/ml": "AI/ML",
-        "web development": "Web development",
-        "cloud computing": "Cloud Computing",
-        "data science": "Data science",
-        "datascience": "Data science",
-    }
-    selected_course_key = str(selected_course).strip().lower()
-    if selected_course_key not in allowed_courses:
+    if normalized_course is None:
+        if str(user_role or "").strip().lower() in STAFF_ROLES:
+            normalized_course = "All Courses"
+        else:
+            return {"error": "selected_course is required. Choose a course before chatting."}, 400
+
+    if str(user_role or "").strip().lower() not in STAFF_ROLES and not normalized_course:
         return {"error": "selected_course must be one of: AI/ML, Web development, Cloud Computing, Data science"}, 400
-    selected_course = allowed_courses[selected_course_key]
+
+    selected_course = normalized_course
 
     if not session_id:
         session_id = str(uuid.uuid4())
@@ -343,6 +401,7 @@ def chat_route():
             user_id = None
 
     def stream_with_context(query, sid, uid, role, selected):
+        # Collect streamed text so it can be exported to PDF later.
         collected = ""
         for chunk in chat(query, chat_histories[sid], user_id=uid, user_role=role, selected_course=selected, session_id=sid):
             if chunk:
@@ -391,9 +450,9 @@ def download_pdf():
 
 @app.route("/list_documents", methods=["GET"])
 def list_documents_route():
-    """Return distinct file_name, source, document_id from document_chunks (same DB the app uses)."""
+    """Return document metadata rows from documents table."""
     try:
-        docs = list_document_names()
+        docs = list_documents_metadata()
         return {"documents": docs}
     except Exception as e:
         return {"error": str(e)}, 500
@@ -425,34 +484,14 @@ def set_document_status_route():
 
 @app.route("/approve_document", methods=["POST"])
 def approve_document_route():
-    data = request.get_json(silent=True) or {}
-    payload = {
-        "status": "approved",
-        "file_name": data.get("file_name"),
-        "source": data.get("source"),
-    }
-    request_data = payload
-    status = request_data["status"]
-    updated_count = update_document_status(status=status, file_name=request_data.get("file_name"), source=request_data.get("source"))
-    if updated_count == 0:
-        return {"status": "not_found_or_error", "updated_count": 0}, 404
-    return {"status": "updated", "updated_count": updated_count}
+    """Approve all chunks for the given document selector."""
+    return _update_document_status_from_payload("approved")
 
 
 @app.route("/reject_document", methods=["POST"])
 def reject_document_route():
-    data = request.get_json(silent=True) or {}
-    payload = {
-        "status": "rejected",
-        "file_name": data.get("file_name"),
-        "source": data.get("source"),
-    }
-    request_data = payload
-    status = request_data["status"]
-    updated_count = update_document_status(status=status, file_name=request_data.get("file_name"), source=request_data.get("source"))
-    if updated_count == 0:
-        return {"status": "not_found_or_error", "updated_count": 0}, 404
-    return {"status": "updated", "updated_count": updated_count}
+    """Reject all chunks for the given document selector."""
+    return _update_document_status_from_payload("rejected")
 
 
 @app.route("/delete_document", methods=["POST"])
