@@ -7,9 +7,11 @@ from flask import Flask, request, Response, render_template, send_file
 from flask_cors import CORS
 from app import chat
 from rag_working import (
-    delete_document, list_document_names, list_documents_metadata, get_courses, index_single_document, 
-    update_document_status, init_db_tables, verify_user, create_user, 
-    get_user_by_id, get_all_users, add_user_to_course, get_user_courses
+    delete_document, list_documents_metadata, get_courses, index_single_document,
+    update_document_status, init_db_tables, verify_user, create_user,
+    get_user_by_id, get_all_users, add_user_to_course, get_user_courses,
+    get_chat_sessions, get_chat_turns,
+    rebuild_chat_history_from_turns, upsert_chat_session
 )
 from io import BytesIO
 from html import escape
@@ -19,11 +21,10 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowabl
 from reportlab.lib.styles import getSampleStyleSheet
 
 ALLOWED_COURSES = {
-    "ai/ml": "AI/ML",
-    "web development": "Web development",
-    "cloud computing": "Cloud Computing",
-    "data science": "Data science",
-    "datascience": "Data science",
+    "life insurance": "Life Insurance",
+    "lifeinsurance": "Life Insurance",
+    "islamic banking": "Islamic Banking",
+    "islamicbanking": "Islamic Banking",
 }
 
 STAFF_ROLES = {"instructor", "admin"}
@@ -243,7 +244,9 @@ def upload_document_route():
         return {"error": message, "document_id": document_id}, 400
     return {"status": "indexed", "message": message, "document_id": document_id}
 
+# In-memory cache used for active streaming conversations in this process.
 chat_histories = {}
+# Stores the last streamed assistant response per session for PDF export.
 last_responses = {}
 
 
@@ -274,6 +277,11 @@ def _update_document_status_from_payload(status: str):
     if updated_count == 0:
         return {"status": "not_found_or_error", "updated_count": 0}, 404
     return {"status": "updated", "updated_count": updated_count}
+
+
+def _normalize_role(user_role) -> str:
+    """Return a lowercase role value for consistent role checks."""
+    return str(user_role or "").strip().lower()
 
 
 def markdown_to_story(text: str):
@@ -362,6 +370,7 @@ def chat_route():
     session_id = data.get("session_id")
     user_id = data.get("user_id")  # student id: retrieval limited to their enrolled courses
     user_role = data.get("user_role")
+    normalized_role = _normalize_role(user_role)
     selected_course = data.get("selected_course")
     if selected_course is None:
         # Backward compatibility for older clients
@@ -378,12 +387,12 @@ def chat_route():
         return {"error": "selected_course must be a single course value, not a list."}, 400
 
     if normalized_course is None:
-        if str(user_role or "").strip().lower() in STAFF_ROLES:
+        if normalized_role in STAFF_ROLES:
             normalized_course = "All Courses"
         else:
             return {"error": "selected_course is required. Choose a course before chatting."}, 400
 
-    if str(user_role or "").strip().lower() not in STAFF_ROLES and not normalized_course:
+    if normalized_role not in STAFF_ROLES and not normalized_course:
         return {"error": "selected_course must be one of: AI/ML, Web development, Cloud Computing, Data science"}, 400
 
     selected_course = normalized_course
@@ -391,8 +400,13 @@ def chat_route():
     if not session_id:
         session_id = str(uuid.uuid4())
 
+    # owner_key links browser-level history when users are not authenticated.
+    owner_key = str(data.get("browser_id") or data.get("owner_key") or user_id or "anonymous").strip()
+
     if session_id not in chat_histories:
-        chat_histories[session_id] = []
+        # Rehydrate history so model context survives server restarts/new workers.
+        restored_history = rebuild_chat_history_from_turns(session_id)
+        chat_histories[session_id] = restored_history
 
     if user_id is not None:
         try:
@@ -400,10 +414,34 @@ def chat_route():
         except (ValueError, TypeError):
             user_id = None
 
+
+    # Keep session metadata fresh even if no new turn has been persisted yet.
+    upsert_chat_session(
+        session_id=session_id,
+        owner_key=owner_key,
+        user_id=user_id,
+        user_role=user_role,
+        selected_course=selected_course,
+        title=query,
+    )
+
     def stream_with_context(query, sid, uid, role, selected):
         # Collect streamed text so it can be exported to PDF later.
         collected = ""
-        for chunk in chat(query, chat_histories[sid], user_id=uid, user_role=role, selected_course=selected, session_id=sid):
+        local_history = chat_histories[sid]
+        if not local_history:
+            # Defensive fallback in case cache was evicted mid-session.
+            local_history.extend(rebuild_chat_history_from_turns(sid))
+
+        for chunk in chat(
+            query,
+            local_history,
+            user_id=uid,
+            user_role=role,
+            selected_course=selected,
+            session_id=sid,
+            owner_key=owner_key,
+        ):
             if chunk:
                 collected += chunk
             yield chunk
@@ -414,6 +452,38 @@ def chat_route():
         stream_with_context(query, session_id, user_id, user_role, selected_course),
         mimetype="text/event-stream",
     )
+
+
+@app.route("/chat_sessions", methods=["GET"])
+def chat_sessions_route():
+    """Return saved chat sessions for the current browser/user."""
+    owner_key = str(request.args.get("owner_key") or request.args.get("browser_id") or "").strip()
+    user_id_raw = request.args.get("user_id")
+    user_id = None
+    if user_id_raw not in (None, ""):
+        try:
+            user_id = int(user_id_raw)
+        except (ValueError, TypeError):
+            return {"error": "user_id must be an integer"}, 400
+
+    sessions = get_chat_sessions(owner_key=owner_key or None, user_id=user_id)
+    return {"sessions": sessions}, 200
+
+
+@app.route("/chat_sessions/<session_id>", methods=["GET"])
+def chat_session_messages_route(session_id):
+    """Return stored turns for a chat session."""
+    owner_key = str(request.args.get("owner_key") or request.args.get("browser_id") or "").strip()
+    if owner_key:
+        # Only expose sessions owned by this browser/user key.
+        sessions = get_chat_sessions(owner_key=owner_key)
+        if not any(session["session_id"] == session_id for session in sessions):
+            return {"error": "session not found"}, 404
+
+    turns = get_chat_turns(session_id)
+    if not turns:
+        return {"session_id": session_id, "turns": []}, 200
+    return {"session_id": session_id, "turns": turns}, 200
 
 
 @app.route("/download_pdf", methods=["GET"])

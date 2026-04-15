@@ -8,11 +8,90 @@
       /* Utility-style classes used by this single-page chat UI. */
       body {
         font-family: "Inter", sans-serif;
-        background-color: #f7f7f7;
+        background: linear-gradient(135deg, #eef2ff 0%, #f8fafc 45%, #ffffff 100%);
+        margin: 0;
+        min-height: 100vh;
         display: flex;
         justify-content: center;
-        align-items: center;
-        min-height: 100vh;
+        align-items: stretch;
+      }
+
+      .app-shell {
+        width: min(1280px, calc(100vw - 24px));
+        min-height: calc(100vh - 24px);
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        gap: 16px;
+        padding: 12px;
+        box-sizing: border-box;
+      }
+
+      .sidebar {
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid #e5e7eb;
+        border-radius: 20px;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .sidebar-header {
+        padding: 16px;
+        border-bottom: 1px solid #e5e7eb;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      }
+
+      .sidebar-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+      }
+
+      .sidebar-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .history-item {
+        border: 1px solid #e5e7eb;
+        background: #fff;
+        border-radius: 14px;
+        padding: 12px;
+        cursor: pointer;
+        text-align: left;
+        transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+      }
+
+      .history-item:hover {
+        transform: translateY(-1px);
+        border-color: #bfdbfe;
+        box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+      }
+
+      .history-item.active {
+        border-color: #3b82f6;
+        box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12);
+      }
+
+      .history-title {
+        font-weight: 700;
+        color: #111827;
+        font-size: 0.95rem;
+        margin-bottom: 4px;
+      }
+
+      .history-meta {
+        font-size: 0.75rem;
+        color: #6b7280;
+        line-height: 1.3;
+      }
+
+      .main-panel {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
       }
 
       .w-full {
@@ -283,16 +362,35 @@
     </style>
   </head>
   <body class="p-4">
-    <div
-      class="w-full max-w-lg bg-white shadow-xl rounded-xl flex flex-col h-[80vh] min-h-[500px]"
-    >
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="header-content">
+            <div class="header-title-group">
+              <h1 class="text-lg font-bold text-gray-800">Chat History</h1>
+              <p class="text-sm text-gray-500">Open a previous chat or start a new one</p>
+            </div>
+          </div>
+          <div class="flex gap-2 mt-4">
+            <button type="button" id="new-chat-btn" class="flex-1 p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">New chat</button>
+            <button type="button" id="refresh-chats-btn" class="p-2 rounded-lg border border-gray-300 hover:bg-gray-100" title="Refresh chat list">↻</button>
+          </div>
+        </div>
+        <div class="sidebar-body">
+          <div id="chat-history-list" class="sidebar-list">
+            <div class="text-sm text-gray-500">Loading chats...</div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="main-panel w-full bg-white shadow-xl rounded-xl flex flex-col h-[80vh] min-h-[500px]">
       <header class="p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
         <div class="header-content">
           <div class="header-title-group">
             <h1 class="text-lg font-bold text-gray-800">Chatbot Assistant</h1>
-            <p class="text-sm text-gray-500">Ask questions about your documents</p>
+            <p id="active-chat-title" class="text-sm text-gray-500">Ask questions about your documents</p>
           </div>
-          <input type="file" id="doc-file-input" accept=".pdf,.txt,.md" style="display: none" />
+          <input type="file" id="doc-file-input" accept=".pdf,.txt,.md,.docx,.jpg,.jpeg,.png" style="display: none" />
           <button type="button" id="add-doc-btn" class="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700" title="Add document to a course">+</button>
         </div>
       </header>
@@ -357,6 +455,7 @@
         </button>
         </div>
       </div>
+      </div>
     </div>
 
     <script>
@@ -365,9 +464,14 @@
       const DOWNLOAD_ENDPOINT = "http://127.0.0.1:8000/download_pdf";
       const COURSES_ENDPOINT = "http://127.0.0.1:8000/courses";
       const UPLOAD_ENDPOINT = "http://127.0.0.1:8000/upload_document";
+      const CHAT_SESSIONS_ENDPOINT = "http://127.0.0.1:8000/chat_sessions";
 
-      // New session on every page load — no memory from previous sessions
-      const sessionID = crypto.randomUUID();
+      const browserIDKey = "rag_chat_browser_id";
+      const activeSessionKey = "rag_chat_active_session_id";
+      const browserID = localStorage.getItem(browserIDKey) || crypto.randomUUID();
+      localStorage.setItem(browserIDKey, browserID);
+      let sessionID = localStorage.getItem(activeSessionKey) || crypto.randomUUID();
+      localStorage.setItem(activeSessionKey, sessionID);
 
       // Render a small markdown subset returned by the backend.
 
@@ -436,6 +540,10 @@
         const userInput = document.getElementById("user-input");
         const sendButton = document.getElementById("send-button");
         const downloadButton = document.getElementById("download-button");
+        const newChatBtn = document.getElementById("new-chat-btn");
+        const refreshChatsBtn = document.getElementById("refresh-chats-btn");
+        const chatHistoryList = document.getElementById("chat-history-list");
+        const activeChatTitle = document.getElementById("active-chat-title");
         const courseFilterInput = document.getElementById("student-id-input");
         const addDocBtn = document.getElementById("add-doc-btn");
         const docFileInput = document.getElementById("doc-file-input");
@@ -448,8 +556,129 @@
 
         let pendingFile = null;
         let canDownload = false;
+        let currentSessions = [];
         // Hide download until a response type that implies a document is requested.
         downloadButton.style.display = "none";
+
+        const escapeHtml = (value) =>
+          String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+
+        const setActiveSession = (newSessionID) => {
+          sessionID = newSessionID;
+          localStorage.setItem(activeSessionKey, sessionID);
+        };
+
+        const setConversationHeader = (title, courseName) => {
+          const courseSuffix = courseName ? ` • ${courseName}` : "";
+          activeChatTitle.textContent = `${title || "Chat"}${courseSuffix}`;
+        };
+
+        const renderConversation = (turns) => {
+          chatWindow.innerHTML = "";
+          if (!turns || !turns.length) {
+            const emptyMessage = createMessageElement("bot");
+            emptyMessage.innerHTML = "Hello! Select a conversation or start a new chat.";
+            return;
+          }
+
+          turns.forEach((turn) => {
+            const userBubble = createMessageElement("user");
+            userBubble.textContent = turn.user_query || "";
+
+            const botBubble = createMessageElement("bot");
+            botBubble.dataset.accumulated = turn.response_text || "";
+            botBubble.innerHTML = parseMarkdownToHTML(turn.response_text || "");
+            botBubble.removeAttribute("id");
+          });
+        };
+
+        const renderChatHistoryList = () => {
+          if (!currentSessions.length) {
+            chatHistoryList.innerHTML = '<div class="text-sm text-gray-500">No saved chats yet.</div>';
+            return;
+          }
+
+          chatHistoryList.innerHTML = currentSessions
+            .map((session) => {
+              const isActive = session.session_id === sessionID ? "active" : "";
+              const title = escapeHtml(session.title || "New chat");
+              const course = escapeHtml(session.selected_course || "All Courses");
+              const updated = session.last_message_at ? new Date(session.last_message_at).toLocaleString() : "";
+              return `
+                <button class="history-item ${isActive}" data-session-id="${escapeHtml(session.session_id)}">
+                  <div class="history-title">${title}</div>
+                  <div class="history-meta">${course}</div>
+                  <div class="history-meta">${updated}</div>
+                </button>
+              `;
+            })
+            .join("");
+
+          chatHistoryList.querySelectorAll(".history-item").forEach((button) => {
+            button.addEventListener("click", async () => {
+              const targetSessionId = button.getAttribute("data-session-id");
+              if (targetSessionId && targetSessionId !== sessionID) {
+                await loadChatSession(targetSessionId);
+              }
+            });
+          });
+        };
+
+        const refreshChatSessions = async () => {
+          try {
+            const res = await fetch(`${CHAT_SESSIONS_ENDPOINT}?owner_key=${encodeURIComponent(browserID)}`);
+            const data = await res.json();
+            currentSessions = data.sessions || [];
+            renderChatHistoryList();
+          } catch (err) {
+            chatHistoryList.innerHTML = '<div class="text-sm text-red-600">Failed to load chat history.</div>';
+            console.error(err);
+          }
+        };
+
+        const loadChatSession = async (targetSessionId) => {
+          try {
+            const res = await fetch(
+              `${CHAT_SESSIONS_ENDPOINT}/${encodeURIComponent(targetSessionId)}?owner_key=${encodeURIComponent(browserID)}`
+            );
+            const data = await res.json();
+            const turns = data.turns || [];
+            setActiveSession(targetSessionId);
+
+            const sessionMeta = currentSessions.find((item) => item.session_id === targetSessionId) || {};
+            const courseName = sessionMeta.selected_course || "";
+            if (courseName && ["Life Insurance", "Islamic Banking"].includes(courseName)) {
+              courseFilterInput.value = courseName;
+            }
+
+            const title = sessionMeta.title || "Chat";
+            setConversationHeader(title, courseName);
+            renderConversation(turns);
+            renderChatHistoryList();
+          } catch (err) {
+            console.error(err);
+          }
+        };
+
+        const startNewChat = async () => {
+          setActiveSession(crypto.randomUUID());
+          chatWindow.innerHTML = "";
+          canDownload = false;
+          downloadButton.style.display = "none";
+          courseFilterInput.value = courseFilterInput.value || "";
+          setConversationHeader("New chat", courseFilterInput.value.trim());
+          const welcomeBubble = createMessageElement("bot");
+          welcomeBubble.innerHTML = "Hello! Start a new conversation.";
+          await refreshChatSessions();
+        };
+
+        newChatBtn.addEventListener("click", startNewChat);
+        refreshChatsBtn.addEventListener("click", refreshChatSessions);
 
         // Upload flow: pick file -> choose course -> upload/index.
         addDocBtn.addEventListener("click", () => docFileInput.click());
@@ -570,8 +799,6 @@
           let botMessageElement = createMessageElement("bot");
           botMessageElement.innerHTML = '<span class="dot-flashing"></span>';
 
-          let finalResponseText = "";
-
           try {
             const response = await fetch(API_ENDPOINT, {
               method: "POST",
@@ -581,8 +808,9 @@
               body: JSON.stringify({
                 query: query,
                 session_id: sessionID,
+                browser_id: browserID,
                 selected_course: courseFilterInput.value.trim() || null,
-                user_id: courseFilterInput.value.trim() || null,
+                user_id: null,
               }),
             });
 
@@ -603,7 +831,6 @@
               const chunk = decoder.decode(value);
 
               appendText(botMessageElement, chunk);
-              finalResponseText += chunk;
             }
 
           } catch (error) {
@@ -611,6 +838,8 @@
             botMessageElement.style.backgroundColor = "#fecaca";
             console.error("Streaming error:", error);
           }
+
+          await refreshChatSessions();
         };
 
         // Handle one user send cycle: show message, stream answer, toggle download button.
@@ -691,6 +920,16 @@
         });
 
 
+
+        setConversationHeader("New chat", courseFilterInput.value.trim());
+        refreshChatSessions().then(async () => {
+          const activeExists = currentSessions.some((session) => session.session_id === sessionID);
+          if (activeExists) {
+            await loadChatSession(sessionID);
+          } else {
+            await startNewChat();
+          }
+        });
 
         userInput.focus();
       });

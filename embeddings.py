@@ -44,6 +44,7 @@ class JinaAPIEmbeddings:
         return [item["embedding"] for item in data]
 
     def embed_query(self, text: str) -> list[float]:
+        # Keep LangChain-like method name used throughout the existing codebase.
         embeddings = self._embed([text])
         if not embeddings:
             raise ValueError("Jina API returned no embedding for query.")
@@ -61,5 +62,6 @@ def get_embeddings():
     if not api_key:
         raise ValueError("JINA_API_KEY is missing. Add it to your .env file.")
 
+    # Optional override so model can be switched without code changes.
     model_name = os.getenv("JINA_EMBEDDING_MODEL", "jina-embeddings-v3").strip() or "jina-embeddings-v3"
     return JinaAPIEmbeddings(api_key=api_key, model=model_name)

@@ -4,12 +4,31 @@
 import os
 from dotenv import load_dotenv
 from google import genai
-from rag_working import get_response
+from rag_working import get_response, store_chat_turn, update_chat_turn_response
 
 load_dotenv()
 
 # Gemini client used for streaming chat completions.
 client_gemini = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+DEFAULT_CHAT_MODELS = [
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+]
+STAFF_ROLES = {"instructor", "admin"}
+
+
+def _resolve_chat_models() -> list[str]:
+    """Return preferred chat models from env or defaults, in failover order."""
+    configured = os.getenv("GEMINI_CHAT_MODELS", "").strip()
+    if not configured:
+        return DEFAULT_CHAT_MODELS
+
+    # Accept comma-separated model ids in env, preserving explicit order.
+    models = [m.strip() for m in configured.split(",") if m.strip()]
+    return models or DEFAULT_CHAT_MODELS
 
 
 # Remember the latest selected course per session to avoid cross-course leakage.
@@ -30,7 +49,20 @@ def _extract_text_from_parts(response_obj) -> str:
     return "".join(texts)
 
 
-def chat(query, chat_history, user_id=None, user_role=None, selected_course=None, session_id=None):
+def _is_staff_role(user_role: str | None) -> bool:
+    """Return True when the role can query across all courses."""
+    return str(user_role or "").strip().lower() in STAFF_ROLES
+
+
+def chat(
+    query,
+    chat_history,
+    user_id=None,
+    user_role=None,
+    selected_course=None,
+    session_id=None,
+    owner_key=None,
+):
     """
     Build retrieval context and stream a response from Gemini.
     Students are restricted to the selected course; staff can query across all courses.
@@ -38,7 +70,7 @@ def chat(query, chat_history, user_id=None, user_role=None, selected_course=None
     normalized_role = str(user_role or "").strip().lower()
     selected_value = str(selected_course).strip() if selected_course is not None else ""
 
-    if normalized_role in {"instructor", "admin"}:
+    if _is_staff_role(normalized_role):
         selected_value = selected_value or "All Courses"
         allowed_course_names = None
     else:
@@ -55,12 +87,12 @@ def chat(query, chat_history, user_id=None, user_role=None, selected_course=None
 
     role_prompt = (
         "You are a knowledgeable assistant with access to all course documents. "
-        if normalized_role in {"instructor", "admin"}
+        if _is_staff_role(normalized_role)
         else f"You are a knowledgeable assistant for the '{selected_value}' course. "
     )
     scope_prompt = (
         "Answer ONLY using the provided Context from the available course documents. "
-        if normalized_role in {"instructor", "admin"}
+        if _is_staff_role(normalized_role)
         else f"Answer ONLY using the provided Context from '{selected_value}' course documents. "
     )
     guardrails_prompt = (
@@ -83,26 +115,62 @@ User Question:
 {query}
 """
 
+    # Each full turn adds prompt + assistant response to history.
+    turn_index = len(chat_history) // 2 + 1
+    if session_id and owner_key:
+        store_chat_turn(
+            session_id=session_id,
+            owner_key=str(owner_key),
+            turn_index=turn_index,
+            user_query=query,
+            prompt_text=prompt_with_context,
+            response_text="",
+            user_id=user_id,
+            user_role=user_role,
+            selected_course=selected_value or None,
+        )
+
     chat_history.append(prompt_with_context)
 
     complete_response = ""
+    chat_models = _resolve_chat_models()
+    last_error = None
+    has_streamed_output = False
 
-    try:
-        response = client_gemini.models.generate_content_stream(
-            model="gemini-3.1-flash-lite-preview",
-            contents=chat_history,
-        )
+    for model_name in chat_models:
+        try:
+            # Try models in order and fall back only when a model fails pre-stream.
+            response = client_gemini.models.generate_content_stream(
+                model=model_name,
+                contents=chat_history,
+            )
 
-        for chunk in response:
-            chunk_text = _extract_text_from_parts(chunk)
-            if chunk_text:
-                complete_response += chunk_text
-                yield chunk_text
+            for chunk in response:
+                chunk_text = _extract_text_from_parts(chunk)
+                if chunk_text:
+                    has_streamed_output = True
+                    complete_response += chunk_text
+                    yield chunk_text
 
-    except Exception as e:
-        error_msg = f"[Error generating response: {str(e)}]"
+            if complete_response.strip():
+                break
+
+            raise RuntimeError(f"Model '{model_name}' returned an empty response.")
+        except Exception as e:
+            last_error = e
+            # If streaming already started, avoid switching models mid-response.
+            if has_streamed_output:
+                break
+            continue
+
+    if not complete_response.strip():
+        error_detail = str(last_error) if last_error else "No response from available models."
+        error_msg = f"[Error generating response: {error_detail}]"
         yield error_msg
         complete_response = error_msg
 
     chat_history.append(complete_response)
+
+    if session_id and owner_key:
+        update_chat_turn_response(session_id=session_id, turn_index=turn_index, response_text=complete_response)
 

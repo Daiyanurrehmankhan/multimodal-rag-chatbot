@@ -39,6 +39,15 @@ DB_USER = os.getenv("DB_USER", "user")
 DB_PASS = os.getenv("DB_PASS", "pass")
 TABLE_NAME = "document_chunks"
 DOCUMENTS_TABLE_NAME = "documents"
+CHAT_SESSIONS_TABLE_NAME = "chat_sessions"
+CHAT_TURNS_TABLE_NAME = "chat_turns"
+
+DEFAULT_IMAGE_MODELS = [
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+]
 
 # --------------------------------------------------
 # GEMINI CLIENT (IMAGES)
@@ -135,6 +144,54 @@ def create_documents_table_if_not_exists():
         cur.close()
         conn.close()
 
+
+def create_chat_tables_if_not_exists():
+    """Create tables used to persist chat sessions and chat turns."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {CHAT_SESSIONS_TABLE_NAME} (
+                session_id TEXT PRIMARY KEY,
+                owner_key TEXT NOT NULL,
+                user_id INTEGER,
+                user_role TEXT,
+                selected_course TEXT,
+                title TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                last_message_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        """)
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {CHAT_TURNS_TABLE_NAME} (
+                id SERIAL PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES {CHAT_SESSIONS_TABLE_NAME}(session_id) ON DELETE CASCADE,
+                turn_index INTEGER NOT NULL,
+                user_query TEXT NOT NULL,
+                prompt_text TEXT NOT NULL,
+                response_text TEXT,
+                selected_course TEXT,
+                user_role TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE (session_id, turn_index)
+            );
+        """)
+        cur.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{CHAT_SESSIONS_TABLE_NAME}_owner_key ON {CHAT_SESSIONS_TABLE_NAME}(owner_key);"
+        )
+        cur.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{CHAT_SESSIONS_TABLE_NAME}_updated_at ON {CHAT_SESSIONS_TABLE_NAME}(updated_at DESC);"
+        )
+        cur.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{CHAT_TURNS_TABLE_NAME}_session_id ON {CHAT_TURNS_TABLE_NAME}(session_id);"
+        )
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
 # --------------------------------------------------
 # HELPER FUNCTIONS
 # --------------------------------------------------
@@ -159,6 +216,16 @@ def _extract_text_from_parts(response_obj) -> str:
                 texts.append(part_text)
     return "".join(texts)
 
+
+def _resolve_image_models() -> list[str]:
+    """Return preferred image models from env or defaults, in failover order."""
+    configured = os.getenv("GEMINI_IMAGE_MODELS", "").strip()
+    if not configured:
+        return DEFAULT_IMAGE_MODELS
+
+    models = [m.strip() for m in configured.split(",") if m.strip()]
+    return models or DEFAULT_IMAGE_MODELS
+
 def process_image_to_document(file_path: str, client: genai.Client):
     """Generate a text summary for images so they can be embedded like text docs."""
     if not client:
@@ -171,16 +238,30 @@ def process_image_to_document(file_path: str, client: genai.Client):
             "Provide a concise, detailed, professional summary of the image content. "
             "Focus on technical or informational aspects only."
         )
-        response = client.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
-            contents=[
-                {"role": "user", "parts": [
-                    {"text": prompt},
-                    {"inlineData": {"mimeType": mime_type, "data": base64_image}}
-                ]}
-            ]
-        )
-        response_text = _extract_text_from_parts(response)
+        response_text = ""
+        last_error = None
+        for model_name in _resolve_image_models():
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        {"role": "user", "parts": [
+                            {"text": prompt},
+                            {"inlineData": {"mimeType": mime_type, "data": base64_image}}
+                        ]}
+                    ]
+                )
+                response_text = _extract_text_from_parts(response)
+                if response_text.strip():
+                    break
+                raise RuntimeError(f"Model '{model_name}' returned an empty image description.")
+            except Exception as e:
+                last_error = e
+                continue
+
+        if not response_text.strip() and last_error is not None:
+            raise RuntimeError(str(last_error))
+
         if not response_text.strip():
             response_text = "No descriptive text could be extracted from this image."
         return [
@@ -366,6 +447,7 @@ def init_db_tables():
     create_courses_table_if_not_exists()
     create_enrollments_table_if_not_exists()
     create_documents_table_if_not_exists()
+    create_chat_tables_if_not_exists()
 
 
 def _hash_password(password: str) -> str:
@@ -558,6 +640,195 @@ def get_all_course_names() -> list[str]:
     finally:
         cur.close()
         conn.close()
+
+
+def _build_chat_title(user_query: str) -> str:
+    """Create a short display title for a chat session."""
+    cleaned = " ".join(str(user_query or "").split()).strip()
+    if not cleaned:
+        return "New chat"
+    # Keep titles compact for sidebar/list UIs.
+    return cleaned[:60]
+
+
+def upsert_chat_session(
+    session_id: str,
+    owner_key: str,
+    user_id: int | None = None,
+    user_role: str | None = None,
+    selected_course: str | None = None,
+    title: str | None = None,
+) -> None:
+    """Create or refresh a chat session row."""
+    if not session_id or not owner_key:
+        return
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            f"""
+            INSERT INTO {CHAT_SESSIONS_TABLE_NAME} (
+                session_id, owner_key, user_id, user_role, selected_course, title, created_at, updated_at, last_message_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW())
+            ON CONFLICT (session_id)
+            DO UPDATE SET
+                owner_key = EXCLUDED.owner_key,
+                -- Preserve prior non-null attributes when partial updates are sent.
+                user_id = COALESCE(EXCLUDED.user_id, {CHAT_SESSIONS_TABLE_NAME}.user_id),
+                user_role = COALESCE(EXCLUDED.user_role, {CHAT_SESSIONS_TABLE_NAME}.user_role),
+                selected_course = COALESCE(EXCLUDED.selected_course, {CHAT_SESSIONS_TABLE_NAME}.selected_course),
+                title = COALESCE(EXCLUDED.title, {CHAT_SESSIONS_TABLE_NAME}.title),
+                updated_at = NOW(),
+                last_message_at = NOW()
+            """,
+            (session_id, owner_key, user_id, user_role, selected_course, title),
+        )
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+
+def store_chat_turn(
+    session_id: str,
+    owner_key: str,
+    turn_index: int,
+    user_query: str,
+    prompt_text: str,
+    response_text: str,
+    user_id: int | None = None,
+    user_role: str | None = None,
+    selected_course: str | None = None,
+) -> int:
+    """Persist one turn of chat and return the turn id."""
+    if not session_id or not owner_key:
+        return 0
+    upsert_chat_session(
+        session_id=session_id,
+        owner_key=owner_key,
+        user_id=user_id,
+        user_role=user_role,
+        selected_course=selected_course,
+        title=_build_chat_title(user_query) if turn_index == 1 else None,
+    )
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            f"""
+            INSERT INTO {CHAT_TURNS_TABLE_NAME} (
+                session_id, turn_index, user_query, prompt_text, response_text, selected_course, user_role, created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+            ON CONFLICT (session_id, turn_index)
+            DO UPDATE SET
+                user_query = EXCLUDED.user_query,
+                prompt_text = EXCLUDED.prompt_text,
+                response_text = EXCLUDED.response_text,
+                selected_course = EXCLUDED.selected_course,
+                user_role = EXCLUDED.user_role,
+                updated_at = NOW()
+            RETURNING id
+            """,
+            (session_id, turn_index, user_query, prompt_text, response_text, selected_course, user_role),
+        )
+        row = cur.fetchone()
+        cur.execute(
+            f"UPDATE {CHAT_SESSIONS_TABLE_NAME} SET updated_at = NOW(), last_message_at = NOW(), title = COALESCE(title, %s) WHERE session_id = %s",
+            (_build_chat_title(user_query), session_id),
+        )
+        conn.commit()
+        return row[0] if row else 0
+    finally:
+        cur.close()
+        conn.close()
+
+
+def update_chat_turn_response(session_id: str, turn_index: int, response_text: str) -> int:
+    """Update the assistant response for a previously stored turn."""
+    if not session_id:
+        return 0
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            f"""
+            UPDATE {CHAT_TURNS_TABLE_NAME}
+            SET response_text = %s, updated_at = NOW()
+            WHERE session_id = %s AND turn_index = %s
+            """,
+            (response_text, session_id, turn_index),
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        cur.close()
+        conn.close()
+
+
+def get_chat_sessions(owner_key: str | None = None, user_id: int | None = None) -> list[dict]:
+    """Return saved chat sessions ordered by most recent activity."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        conditions = []
+        params = []
+        if owner_key:
+            conditions.append("owner_key = %s")
+            params.append(owner_key)
+        if user_id is not None:
+            conditions.append("user_id = %s")
+            params.append(user_id)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        cur.execute(
+            f"""
+            SELECT session_id, owner_key, user_id, user_role, selected_course, title, created_at, updated_at, last_message_at
+            FROM {CHAT_SESSIONS_TABLE_NAME}
+            {where_clause}
+            ORDER BY last_message_at DESC, created_at DESC
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+        return [dict(row) for row in rows] if rows else []
+    finally:
+        cur.close()
+        conn.close()
+
+
+def get_chat_turns(session_id: str) -> list[dict]:
+    """Return stored chat turns for a session ordered from oldest to newest."""
+    if not session_id:
+        return []
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            f"""
+            SELECT turn_index, user_query, prompt_text, response_text, selected_course, user_role, created_at, updated_at
+            FROM {CHAT_TURNS_TABLE_NAME}
+            WHERE session_id = %s
+            ORDER BY turn_index ASC
+            """,
+            (session_id,),
+        )
+        rows = cur.fetchall()
+        return [dict(row) for row in rows] if rows else []
+    finally:
+        cur.close()
+        conn.close()
+
+
+def rebuild_chat_history_from_turns(session_id: str) -> list[str]:
+    """Recreate the in-memory Gemini history from stored chat turns."""
+    history: list[str] = []
+    for turn in get_chat_turns(session_id):
+        prompt_text = turn.get("prompt_text")
+        response_text = turn.get("response_text")
+        if prompt_text:
+            history.append(prompt_text)
+        if response_text:
+            history.append(response_text)
+    return history
 
 
 def index_single_document(
@@ -788,7 +1059,7 @@ def get_enrolled_course_ids(user_id: int) -> list[int]:
 def get_response(query: str, allowed_course_names: list[str] | None = None):
     """
     Retrieve chunks from document_chunks, optionally restricted to the given course names.
-    If allowed_course_names is None or empty, no documents are returned (student must select a course).
+    When allowed_course_names is empty/None, retrieval runs across all approved courses.
     """
     query_embedding = embeddings.embed_query(query)
     conn = get_db_connection()

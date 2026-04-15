@@ -6,6 +6,7 @@ import psycopg2
 
 def main():
     """Print the current `users` table schema for quick DB diagnostics."""
+    # Uses the same env vars as the app so teammates can validate shared DB setup.
     conn = psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=os.getenv("DB_PORT", "5432"),
