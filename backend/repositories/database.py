@@ -18,12 +18,17 @@ CHAT_TURNS_TABLE_NAME = "chat_turns"
 
 def get_db_connection():
     """Create a fresh PostgreSQL connection using environment configuration."""
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url:
+        return psycopg2.connect(database_url)
+
     return psycopg2.connect(
         host=DB_HOST,
         port=DB_PORT,
         dbname=DB_NAME,
         user=DB_USER,
         password=DB_PASS,
+        sslmode=os.getenv("DB_SSLMODE", "require"),
     )
 
 
