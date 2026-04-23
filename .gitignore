@@ -24,6 +24,8 @@ __pycache__/
 # Critical: Never commit files containing API keys or sensitive settings.
 # MUST list files like .env to prevent accidental public disclosure.
 .env
+.env.*
+!.env.example
 .flaskenv
 secrets.json
 
@@ -40,3 +42,22 @@ secrets.json
 # Adjust this rule based on your project's specific data directory structure.
 data/
 uploads/
+
+### Testing, Coverage & Tooling Caches ###
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+### Build & Packaging Artifacts ###
+
+build/
+dist/
+pip-wheel-metadata/
+
+### Logs ###
+
+*.log

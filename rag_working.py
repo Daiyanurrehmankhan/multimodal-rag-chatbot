@@ -3,17 +3,44 @@
 import os
 import logging
 import warnings
-import hashlib
-import base64
-from glob import glob
-from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
-from google import genai
-from langchain.docstore.document import Document
 from embeddings import get_embeddings
-import psycopg2
 import psycopg2.extras
+from backend.repositories.database import (
+    CHAT_SESSIONS_TABLE_NAME,
+    CHAT_TURNS_TABLE_NAME,
+    DB_HOST,
+    DB_NAME,
+    DB_PASS,
+    DB_PORT,
+    DB_USER,
+    DOCUMENTS_TABLE_NAME,
+    TABLE_NAME,
+    create_chat_tables_if_not_exists,
+    create_documents_table_if_not_exists,
+    create_table_if_not_exists,
+    get_db_connection,
+    init_db_tables as init_core_db_tables,
+)
+from backend.repositories.user_data import (
+    add_user_to_course,
+    create_user,
+    get_all_course_names,
+    get_all_users,
+    get_course_id_by_name,
+    get_course_name_by_id,
+    get_courses,
+    get_user_by_id,
+    get_user_courses,
+    init_user_tables,
+    verify_user,
+)
+from backend.services.document_ingestion import (
+    infer_corpus_from_filename,
+    load_and_chunk_single_file,
+    load_and_prepare_documents,
+    process_image_to_document,
+)
 
 # --------------------------------------------------
 # LOGGING & WARNINGS
@@ -32,614 +59,16 @@ embeddings = get_embeddings()
 # CONFIGURATION
 # --------------------------------------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "rag_db")
-DB_USER = os.getenv("DB_USER", "user")
-DB_PASS = os.getenv("DB_PASS", "pass")
-TABLE_NAME = "document_chunks"
-DOCUMENTS_TABLE_NAME = "documents"
-CHAT_SESSIONS_TABLE_NAME = "chat_sessions"
-CHAT_TURNS_TABLE_NAME = "chat_turns"
-
-DEFAULT_IMAGE_MODELS = [
-    "gemini-3.1-pro-preview",
-    "gemini-3.1-flash-lite-preview",
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-]
-
-# --------------------------------------------------
-# GEMINI CLIENT (IMAGES)
-# --------------------------------------------------
-try:
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-except Exception:
-    print("Warning: Gemini Client not initialized.")
-    gemini_client = None
-
-# --------------------------------------------------
-# DATABASE CONNECTION
-# --------------------------------------------------
-def get_db_connection():
-    """Create a fresh PostgreSQL connection using environment configuration."""
-    return psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS
-    )
-
-
-def create_table_if_not_exists():
-    """Ensure the pgvector chunk table exists with the expected schema."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-    cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-            id SERIAL PRIMARY KEY,
-            course_name TEXT,
-            file_name TEXT,
-            source TEXT,
-            chunk_index INTEGER,
-            content TEXT,
-            status TEXT DEFAULT 'approved',
-            embedding VECTOR(1024),
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            UNIQUE (file_name, chunk_index)
-        );
-    """)
-    cur.execute(
-        f"ALTER TABLE {TABLE_NAME} ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'approved';"
-    )
-    cur.execute(
-        f"UPDATE {TABLE_NAME} SET status = 'approved' WHERE status IS NULL OR TRIM(status) = '';"
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-def create_documents_table_if_not_exists():
-    """Create document metadata table for uploaded documents."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute(f"""
-            CREATE TABLE IF NOT EXISTS {DOCUMENTS_TABLE_NAME} (
-                id SERIAL PRIMARY KEY,
-                file_name TEXT NOT NULL,
-                course_id INTEGER,
-                course_name TEXT NOT NULL,
-                short_description TEXT,
-                source TEXT,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE (file_name, course_name)
-            );
-        """)
-        cur.execute(
-            """
-            SELECT conname
-            FROM pg_constraint
-            WHERE conrelid = %s::regclass
-              AND contype = 'f'
-            """,
-            (DOCUMENTS_TABLE_NAME,),
-        )
-        for row in cur.fetchall():
-            cur.execute(
-                f"ALTER TABLE {DOCUMENTS_TABLE_NAME} DROP CONSTRAINT IF EXISTS {row[0]}"
-            )
-        cur.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_{DOCUMENTS_TABLE_NAME}_course_id ON {DOCUMENTS_TABLE_NAME}(course_id);"
-        )
-        cur.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_{DOCUMENTS_TABLE_NAME}_course_name ON {DOCUMENTS_TABLE_NAME}(course_name);"
-        )
-        conn.commit()
-    finally:
-        cur.close()
-        conn.close()
-
-
-def create_chat_tables_if_not_exists():
-    """Create tables used to persist chat sessions and chat turns."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute(f"""
-            CREATE TABLE IF NOT EXISTS {CHAT_SESSIONS_TABLE_NAME} (
-                session_id TEXT PRIMARY KEY,
-                owner_key TEXT NOT NULL,
-                user_id INTEGER,
-                user_role TEXT,
-                selected_course TEXT,
-                title TEXT,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW(),
-                last_message_at TIMESTAMPTZ DEFAULT NOW()
-            );
-        """)
-        cur.execute(f"""
-            CREATE TABLE IF NOT EXISTS {CHAT_TURNS_TABLE_NAME} (
-                id SERIAL PRIMARY KEY,
-                session_id TEXT NOT NULL REFERENCES {CHAT_SESSIONS_TABLE_NAME}(session_id) ON DELETE CASCADE,
-                turn_index INTEGER NOT NULL,
-                user_query TEXT NOT NULL,
-                prompt_text TEXT NOT NULL,
-                response_text TEXT,
-                selected_course TEXT,
-                user_role TEXT,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE (session_id, turn_index)
-            );
-        """)
-        cur.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_{CHAT_SESSIONS_TABLE_NAME}_owner_key ON {CHAT_SESSIONS_TABLE_NAME}(owner_key);"
-        )
-        cur.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_{CHAT_SESSIONS_TABLE_NAME}_updated_at ON {CHAT_SESSIONS_TABLE_NAME}(updated_at DESC);"
-        )
-        cur.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_{CHAT_TURNS_TABLE_NAME}_session_id ON {CHAT_TURNS_TABLE_NAME}(session_id);"
-        )
-        conn.commit()
-    finally:
-        cur.close()
-        conn.close()
 
 # --------------------------------------------------
 # HELPER FUNCTIONS
 # --------------------------------------------------
-def infer_corpus_from_filename(filename: str) -> str:
-    """
-    Lightweight, domain-agnostic corpus label based on filename.
-    Currently returns a generic label; adjust if you want custom grouping.
-    """
-    return "General"
-
-
-def _extract_text_from_parts(response_obj) -> str:
-    """Return concatenated text-only parts from a Gemini response object."""
-    texts = []
-    candidates = getattr(response_obj, "candidates", None) or []
-    for candidate in candidates:
-        content = getattr(candidate, "content", None)
-        parts = getattr(content, "parts", None) or []
-        for part in parts:
-            part_text = getattr(part, "text", None)
-            if part_text:
-                texts.append(part_text)
-    return "".join(texts)
-
-
-def _resolve_image_models() -> list[str]:
-    """Return preferred image models from env or defaults, in failover order."""
-    configured = os.getenv("GEMINI_IMAGE_MODELS", "").strip()
-    if not configured:
-        return DEFAULT_IMAGE_MODELS
-
-    models = [m.strip() for m in configured.split(",") if m.strip()]
-    return models or DEFAULT_IMAGE_MODELS
-
-def process_image_to_document(file_path: str, client: genai.Client):
-    """Generate a text summary for images so they can be embedded like text docs."""
-    if not client:
-        return []
-    try:
-        with open(file_path, "rb") as f:
-            base64_image = base64.b64encode(f.read()).decode("utf-8")
-        mime_type = f"image/{os.path.splitext(file_path)[1].lstrip('.')}"
-        prompt = (
-            "Provide a concise, detailed, professional summary of the image content. "
-            "Focus on technical or informational aspects only."
-        )
-        response_text = ""
-        last_error = None
-        for model_name in _resolve_image_models():
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[
-                        {"role": "user", "parts": [
-                            {"text": prompt},
-                            {"inlineData": {"mimeType": mime_type, "data": base64_image}}
-                        ]}
-                    ]
-                )
-                response_text = _extract_text_from_parts(response)
-                if response_text.strip():
-                    break
-                raise RuntimeError(f"Model '{model_name}' returned an empty image description.")
-            except Exception as e:
-                last_error = e
-                continue
-
-        if not response_text.strip() and last_error is not None:
-            raise RuntimeError(str(last_error))
-
-        if not response_text.strip():
-            response_text = "No descriptive text could be extracted from this image."
-        return [
-            Document(
-                page_content=response_text,
-                metadata={
-                    "source": file_path,
-                    "file_name": os.path.basename(file_path),
-                    "type": "image_description",
-                    "corpus": "Images"
-                }
-            )
-        ]
-    except Exception as e:
-        print(f"Image processing error: {e}")
-        return []
-
-def load_and_prepare_documents():
-    """Load supported files from data/, split content, and return clean chunk documents."""
-    all_files = glob("data/*")
-    documents = []
-    for file_path in all_files:
-        ext = os.path.splitext(file_path)[1].lower()
-        loader = None
-        if ext in [".txt", ".md"]:
-            loader = TextLoader(file_path)
-        elif ext == ".pdf":
-            loader = PyPDFLoader(file_path)
-            print(f"Loaded PDF: {file_path}")
-        elif ext == ".docx":
-            loader = Docx2txtLoader(file_path)
-        elif ext in [".jpg", ".jpeg", ".png"]:
-            documents.extend(process_image_to_document(file_path, gemini_client))
-            continue
-        if not loader:
-            continue
-        try:
-            loaded_docs = loader.load()
-            for doc in loaded_docs:
-                if not doc.page_content.strip():
-                    continue
-                source_path = doc.metadata.get("source", file_path)
-                file_name = os.path.basename(source_path)
-                doc.metadata["file_name"] = file_name
-                doc.metadata["corpus"] = infer_corpus_from_filename(file_name)
-                documents.append(doc)
-        except Exception as e:
-            print(f"Error loading {file_path}: {e}")
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=75
-    )
-    chunks = splitter.split_documents(documents)
-    clean_chunks = [c for c in chunks if c.page_content and len(c.page_content.strip()) >= 30]
-
-    for chunk in clean_chunks:
-        source_path = chunk.metadata.get("source", "unknown")
-        file_name = chunk.metadata.get("file_name", os.path.basename(source_path))
-        chunk.metadata["file_name"] = file_name
-        chunk.metadata["source"] = source_path
-
-    return clean_chunks
-
-
-def load_and_chunk_single_file(file_path: str):
-    """Load one file and return list of chunk documents with metadata (file_name, source, etc.)."""
-    ext = os.path.splitext(file_path)[1].lower()
-    documents = []
-    if ext in [".txt", ".md"]:
-        loader = TextLoader(file_path)
-        for doc in loader.load():
-            if doc.page_content.strip():
-                doc.metadata["file_name"] = os.path.basename(file_path)
-                doc.metadata["source"] = file_path
-                documents.append(doc)
-    elif ext == ".pdf":
-        loader = PyPDFLoader(file_path)
-        for doc in loader.load():
-            if doc.page_content.strip():
-                doc.metadata["file_name"] = os.path.basename(file_path)
-                doc.metadata["source"] = file_path
-                documents.append(doc)
-    elif ext == ".docx":
-        loader = Docx2txtLoader(file_path)
-        for doc in loader.load():
-            if doc.page_content.strip():
-                doc.metadata["file_name"] = os.path.basename(file_path)
-                doc.metadata["source"] = file_path
-                documents.append(doc)
-    elif ext in [".jpg", ".jpeg", ".png"] and gemini_client:
-        documents = process_image_to_document(file_path, gemini_client)
-    else:
-        return []
-    if not documents:
-        return []
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=75)
-    chunks = splitter.split_documents(documents)
-    return [c for c in chunks if c.page_content and len(c.page_content.strip()) >= 30]
-
-
-# --------------------------------------------------
-# USER & ENROLLMENT FUNCTIONS
-# --------------------------------------------------
-def create_users_table_if_not_exists():
-    """Create users table if it doesn't exist."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                role TEXT NOT NULL CHECK (role IN ('student', 'instructor', 'admin')),
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW()
-            );
-        """)
-        # Add password_hash column if it doesn't exist (for existing tables)
-        cur.execute("""
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT DEFAULT '';
-        """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);")
-        conn.commit()
-    finally:
-        cur.close()
-        conn.close()
-
-
-def create_courses_table_if_not_exists():
-    """Create courses table if it doesn't exist."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS courses (
-                id SERIAL PRIMARY KEY,
-                code TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL,
-                created_at TIMESTAMPTZ DEFAULT NOW()
-            );
-        """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_courses_code ON courses(code);")
-        # Insert default courses if they don't exist
-        cur.execute("INSERT INTO courses (code, name) VALUES ('LIFE', 'Life Insurance') ON CONFLICT (code) DO NOTHING;")
-        cur.execute("INSERT INTO courses (code, name) VALUES ('ISLAMIC', 'Islamic Banking') ON CONFLICT (code) DO NOTHING;")
-        conn.commit()
-    finally:
-        cur.close()
-        conn.close()
-
-
-def create_enrollments_table_if_not_exists():
-    """Create enrollments table if it doesn't exist."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS enrollments (
-                id SERIAL PRIMARY KEY,
-                student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-                enrolled_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE (student_id, course_id)
-            );
-        """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_enrollments_student_id ON enrollments(student_id);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON enrollments(course_id);")
-        conn.commit()
-    finally:
-        cur.close()
-        conn.close()
 
 
 def init_db_tables():
     """Initialize all required database tables."""
-    create_table_if_not_exists()
-    create_users_table_if_not_exists()
-    create_courses_table_if_not_exists()
-    create_enrollments_table_if_not_exists()
-    create_documents_table_if_not_exists()
-    create_chat_tables_if_not_exists()
-
-
-def _hash_password(password: str) -> str:
-    """Create deterministic SHA-256 hash for password storage."""
-    return hashlib.sha256((password or "").encode("utf-8")).hexdigest()
-
-
-def _is_valid_password(password: str, stored_password: str) -> bool:
-    """Validate password against stored hash (supports legacy plain-text rows)."""
-    if not stored_password:
-        return False
-    provided_hash = _hash_password(password)
-    return stored_password == provided_hash or stored_password == (password or "")
-
-
-def verify_user(email: str, password: str) -> dict | None:
-    """Verify user credentials and return user object if valid."""
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute(
-            "SELECT id, name, email, role, is_active, password_hash FROM users WHERE email = %s AND is_active = TRUE",
-            (email,)
-        )
-        user = cur.fetchone()
-        if user and _is_valid_password(password, user["password_hash"]):
-            return {
-                'id': user['id'],
-                'name': user['name'],
-                'email': user['email'],
-                'role': user['role']
-            }
-        return None
-    finally:
-        cur.close()
-        conn.close()
-
-
-def create_user(name: str, email: str, password: str, role: str) -> dict | None:
-    """Create a new user."""
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        password_hash = _hash_password(password)
-        cur.execute(
-            "INSERT INTO users (name, email, password_hash, role) VALUES (%s, %s, %s, %s) RETURNING id, name, email, role",
-            (name, email, password_hash, role)
-        )
-        user = cur.fetchone()
-        conn.commit()
-        if user:
-            return {
-                'id': user['id'],
-                'name': user['name'],
-                'email': user['email'],
-                'role': user['role']
-            }
-        return None
-    except psycopg2.IntegrityError:
-        conn.rollback()
-        return None
-    finally:
-        cur.close()
-        conn.close()
-
-
-def get_user_by_id(user_id: int) -> dict | None:
-    """Get user by ID."""
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT id, name, email, role, is_active FROM users WHERE id = %s", (user_id,))
-        user = cur.fetchone()
-        if user:
-            return {
-                'id': user['id'],
-                'name': user['name'],
-                'email': user['email'],
-                'role': user['role']
-            }
-        return None
-    finally:
-        cur.close()
-        conn.close()
-
-
-def get_all_users(role: str | None = None) -> list[dict]:
-    """Get all users, optionally filtered by role."""
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        if role:
-            cur.execute("SELECT id, name, email, role FROM users WHERE role = %s AND is_active = TRUE ORDER BY name", (role,))
-        else:
-            cur.execute("SELECT id, name, email, role FROM users WHERE is_active = TRUE ORDER BY name")
-        users = cur.fetchall()
-        return [dict(row) for row in users] if users else []
-    finally:
-        cur.close()
-        conn.close()
-
-
-def add_user_to_course(user_id: int, course_id: int) -> bool:
-    """Enroll a user in a course."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("INSERT INTO enrollments (student_id, course_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (user_id, course_id))
-        conn.commit()
-        return cur.rowcount > 0
-    except Exception as e:
-        logging.warning(f"Failed to add user to course: {e}")
-        conn.rollback()
-        return False
-    finally:
-        cur.close()
-        conn.close()
-
-
-def get_user_courses(user_id: int) -> list[dict]:
-    """Get all courses for a user."""
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("""
-            SELECT c.id, c.code, c.name
-            FROM courses c
-            INNER JOIN enrollments e ON c.id = e.course_id
-            WHERE e.student_id = %s
-            ORDER BY c.name
-        """, (user_id,))
-        courses = cur.fetchall()
-        return [dict(row) for row in courses] if courses else []
-    finally:
-        cur.close()
-        conn.close()
-
-
-def get_courses():
-    """Return course list from database."""
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT id, code, name FROM courses ORDER BY name")
-        courses = cur.fetchall()
-        return [dict(row) for row in courses] if courses else []
-    finally:
-        cur.close()
-        conn.close()
-
-
-def get_course_name_by_id(course_id: int) -> str | None:
-    """Return course name for a course id, or None when not found."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT name FROM courses WHERE id = %s", (course_id,))
-        row = cur.fetchone()
-        return row[0] if row else None
-    finally:
-        cur.close()
-        conn.close()
-
-
-def get_course_id_by_name(course_name: str) -> int | None:
-    """Return course id for a course name, case-insensitive, or None when not found."""
-    if not course_name:
-        return None
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT id FROM courses WHERE LOWER(name) = LOWER(%s) LIMIT 1", (course_name,))
-        row = cur.fetchone()
-        return row[0] if row else None
-    finally:
-        cur.close()
-        conn.close()
-
-
-def get_all_course_names() -> list[str]:
-    """Return all distinct indexed course names from document_chunks."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            f"SELECT DISTINCT course_name FROM {TABLE_NAME} WHERE course_name IS NOT NULL AND TRIM(course_name) <> '' ORDER BY course_name"
-        )
-        rows = cur.fetchall()
-        return [row[0] for row in rows if row and row[0]]
-    finally:
-        cur.close()
-        conn.close()
+    init_core_db_tables()
+    init_user_tables()
 
 
 def _build_chat_title(user_query: str) -> str:
@@ -813,6 +242,30 @@ def get_chat_turns(session_id: str) -> list[dict]:
         )
         rows = cur.fetchall()
         return [dict(row) for row in rows] if rows else []
+    finally:
+        cur.close()
+        conn.close()
+
+
+def delete_chat_session(session_id: str, owner_key: str | None = None) -> int:
+    """Delete one chat session (and cascaded turns) by session id and optional owner key."""
+    if not session_id:
+        return 0
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        if owner_key:
+            cur.execute(
+                f"DELETE FROM {CHAT_SESSIONS_TABLE_NAME} WHERE session_id = %s AND owner_key = %s",
+                (session_id, owner_key),
+            )
+        else:
+            cur.execute(
+                f"DELETE FROM {CHAT_SESSIONS_TABLE_NAME} WHERE session_id = %s",
+                (session_id,),
+            )
+        conn.commit()
+        return cur.rowcount
     finally:
         cur.close()
         conn.close()
